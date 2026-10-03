@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+atlas-credentials.env
+__pycache__/
+*.pyc
+.venv/
+artifacts/search-result.json
+artifacts/lambda-*

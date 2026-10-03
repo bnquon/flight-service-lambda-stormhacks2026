@@ -1,0 +1,12 @@
+# Only these files can enter the build context. Credentials and local artifacts stay out.
+**
+!Dockerfile
+!.dockerignore
+!requirements.txt
+!lambda_function.py
+!request.py
+!service.py
+!google_flights.py
+!google_flights_navigation.py
+!updates.py
+!storage.py

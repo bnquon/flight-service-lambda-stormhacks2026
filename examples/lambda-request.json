@@ -1,0 +1,9 @@
+{
+  "session_id": "aws-lambda-test",
+  "origins": ["YVR"],
+  "destination": "NRT",
+  "departure_date": "2027-04-10",
+  "return_date": "2027-04-20",
+  "trip_type": "round_trip",
+  "currency": "CAD"
+}
