@@ -8,6 +8,7 @@ import time
 from uuid import uuid4
 
 import google_flights
+from live_browser import stream_browser
 from request import SearchRequest
 from updates import publish_update
 
@@ -106,11 +107,13 @@ async def search_origin(
                            provider="skyvern", browser_session_id=browser.browser_session_id,
                            url=record["live_view_url"])
             page = await browser.get_working_page()
-            # Other websites can expose the same navigate / extract_flights functions.
-            await google_flights.navigate(page.page, request, origin)
-            record["status"] = "extracting"
-            publish_update(request.session_id, search_id, "search.status", origin=origin, status="extracting")
-            return await google_flights.extract_flights(page, request, origin)
+            async with stream_browser(page.page, request.session_id, search_id, origin,
+                                      browser.browser_session_id):
+                # Other websites can expose the same navigate / extract_flights functions.
+                await google_flights.navigate(page.page, request, origin)
+                record["status"] = "extracting"
+                publish_update(request.session_id, search_id, "search.status", origin=origin, status="extracting")
+                return await google_flights.extract_flights(page, request, origin)
     finally:
         # Finalization has its own bounds so a search deadline cannot discard valid fares.
         try:

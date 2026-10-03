@@ -1,0 +1,3 @@
+-r requirements.txt
+# Local WebSocket bridge only; already installed by the current Skyvern extra.
+websockets==15.0.1

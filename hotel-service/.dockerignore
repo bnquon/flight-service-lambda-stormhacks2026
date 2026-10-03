@@ -1,0 +1,11 @@
+**
+!Dockerfile
+!.dockerignore
+!requirements.txt
+!lambda_function.py
+!request.py
+!service.py
+!live_browser.py
+!booking.py
+!updates.py
+!storage.py

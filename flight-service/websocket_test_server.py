@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
+from threading import Event
 
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
@@ -23,10 +24,24 @@ def message(message_type, *, session_id=None, search_id=None, **payload):
 async def run_search(websocket, request):
     loop = asyncio.get_running_loop()
     events = asyncio.Queue()
+    latest_frames = {}
+    disconnected = Event()
+
+    def deliver(event):
+        if disconnected.is_set():
+            return
+        if event is not None and event["type"] == "browser.frame":
+            key = (event["origin"], event["browser_session_id"])
+            if key not in latest_frames:
+                events.put_nowait(key)
+            latest_frames[key] = event
+        else:
+            events.put_nowait(event)
 
     def enqueue(event):
         # The handler runs in a thread; only the event loop touches its queue.
-        loop.call_soon_threadsafe(events.put_nowait, event)
+        if not disconnected.is_set():
+            loop.call_soon_threadsafe(deliver, event)
 
     def worker():
         search_id = None
@@ -59,11 +74,18 @@ async def run_search(websocket, request):
     task = asyncio.create_task(asyncio.to_thread(worker))
     try:
         while (event := await events.get()) is not None:
-            await websocket.send(json.dumps(event))
-    except ConnectionClosed:
+            if isinstance(event, tuple):
+                event = latest_frames.pop(event)
+            await asyncio.wait_for(websocket.send(json.dumps(event)), timeout=10)
+    except (ConnectionClosed, TimeoutError):
         # Closing the page doesn't stop a thread. Let the worker close its cloud browser.
-        pass
+        disconnected.set()
+        await websocket.close()
     finally:
+        disconnected.set()
+        latest_frames.clear()
+        while not events.empty():
+            events.get_nowait()
         await task
 
 
@@ -97,6 +119,7 @@ async def main():
     # Loopback and known frontend origins keep this billable test bridge local.
     async with serve(handle_connection, "127.0.0.1", 8765, origins=[
         "http://127.0.0.1:8080", "http://localhost:8080",
+        "http://127.0.0.1:3000", "http://localhost:3000",
     ]):
         print("WebSocket: ws://127.0.0.1:8765", flush=True)
         print("Frontend: http://127.0.0.1:8080 (serve frontend/ separately)", flush=True)

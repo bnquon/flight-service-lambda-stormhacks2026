@@ -6,6 +6,7 @@
 !lambda_function.py
 !request.py
 !service.py
+!live_browser.py
 !google_flights.py
 !google_flights_navigation.py
 !updates.py

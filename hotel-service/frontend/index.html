@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hotel search test</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Hotel search test</h1>
+    <p>Local proof of concept using the same hotel search code as Lambda. Searches Booking.com for one room in CAD.</p>
+
+    <section aria-labelledby="connection-heading">
+      <h2 id="connection-heading">Connection</h2>
+      <div class="connection-controls">
+        <label>WebSocket URL <input id="websocket-url" type="url" value="ws://127.0.0.1:8765" required></label>
+        <button id="connect" type="button">Connect</button>
+        <button id="disconnect" type="button" disabled>Disconnect</button>
+      </div>
+      <p id="connection-status" role="status">Disconnected</p>
+    </section>
+
+    <section aria-labelledby="search-heading">
+      <h2 id="search-heading">Search</h2>
+      <form id="search-form">
+        <div class="fields">
+          <label>Destination <input name="destination" value="Tokyo, Japan" required></label>
+          <label>Check in <input name="check_in" type="date" value="2027-04-10" required></label>
+          <label>Check out <input name="check_out" type="date" value="2027-04-20" required></label>
+          <label>Adults <input name="adults" type="number" value="2" min="1" step="1" required></label>
+          <label>Total stay budget in CAD (optional) <input name="budget" type="number" min="0.01" step="0.01" placeholder="No limit"></label>
+        </div>
+        <p>One room · Prices in CAD for the whole stay.</p>
+        <button id="start" type="submit" disabled>Start search</button>
+      </form>
+      <p id="search-status" role="status">Connect to start a search.</p>
+      <p id="error" role="alert" hidden></p>
+    </section>
+
+    <section aria-labelledby="browser-heading">
+      <h2 id="browser-heading">Live hotel browser</h2>
+      <p>Watch the browser here as it searches Booking.com. The live session ends when the search finishes.</p>
+      <div id="browser-links" aria-label="Hotel browser preview"></div>
+      <p id="browser-status" role="status">Waiting for a live browser…</p>
+      <img id="live-browser" alt="Live hotel browser preview" hidden>
+    </section>
+
+    <section aria-labelledby="results-heading">
+      <h2 id="results-heading">Results</h2>
+      <p id="results-summary">No results yet.</p>
+      <div class="table-wrap">
+        <table id="results-table" hidden>
+          <thead><tr><th>Hotel</th><th>Total stay price</th><th>Rating</th><th>Reviews</th><th>Price note</th></tr></thead>
+          <tbody id="hotels"></tbody>
+        </table>
+      </div>
+      <details id="raw-result" hidden><summary>Result JSON</summary><pre id="result-json"></pre></details>
+    </section>
+
+    <section aria-labelledby="events-heading">
+      <h2 id="events-heading">Events</h2>
+      <p>Disconnecting doesn't cancel a running search. Wait for it to finish before starting another.</p>
+      <pre id="events" aria-live="polite">Waiting for connection.</pre>
+    </section>
+  </main>
+</body>
+</html>

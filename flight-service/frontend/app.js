@@ -5,6 +5,8 @@ const disconnectButton = byId('disconnect');
 const startButton = byId('start');
 const originStatuses = new Map();
 const browserLinks = new Map();
+const browserStreams = new Map();
+let selectedOrigin = null;
 let socket = null;
 let busy = false;
 let sessionId = null;
@@ -42,34 +44,95 @@ function renderOriginStatuses() {
   }
 }
 
+function renderBrowserPreview() {
+  const stream = browserStreams.get(selectedOrigin);
+  const preview = byId('live-browser');
+  const labels = {
+    starting: 'Connecting to live browser…',
+    live: 'Live',
+    ended: 'Session ended',
+    unavailable: 'Live preview unavailable',
+    disconnected: 'Disconnected',
+  };
+  const label = stream
+    ? `${selectedOrigin}: ${labels[stream.status] || 'Waiting for live preview…'}${stream.frame && stream.status !== 'live' ? ' — showing the last frame' : ''}`
+    : 'Waiting for a live browser…';
+  if (byId('browser-status').textContent !== label) byId('browser-status').textContent = label;
+  preview.hidden = !stream?.frame;
+  if (stream?.frame) {
+    if (preview.getAttribute('src') !== stream.frame) preview.src = stream.frame;
+    preview.alt = `Browser preview for ${selectedOrigin}`;
+  } else {
+    preview.removeAttribute('src');
+  }
+}
+
+function renderBrowsers() {
+  const origins = new Set([...browserStreams.keys(), ...browserLinks.keys()]);
+  if (!selectedOrigin && origins.size) selectedOrigin = origins.values().next().value;
+  byId('browser-links').replaceChildren();
+  for (const origin of origins) {
+    const entry = document.createElement('div');
+    entry.className = 'browser-entry';
+    const view = document.createElement('button');
+    view.type = 'button';
+    view.textContent = `View ${origin}`;
+    view.setAttribute('aria-pressed', String(origin === selectedOrigin));
+    view.addEventListener('click', () => {
+      selectedOrigin = origin;
+      renderBrowsers();
+    });
+    entry.append(view);
+    const liveUrl = browserLinks.get(origin);
+    if (liveUrl) {
+      const link = document.createElement('a');
+      link.href = liveUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Open in Skyvern';
+      entry.append(link);
+    }
+    byId('browser-links').append(entry);
+  }
+  renderBrowserPreview();
+}
+
 function addBrowser(origin, url) {
+  if (!url) return;
   // Only allow browser links to Skyvern; never render a server-provided HTML string.
   const parsed = new URL(url);
   if (parsed.protocol !== 'https:' || parsed.hostname !== 'app.skyvern.com') {
     throw new Error('Expected a Skyvern live browser URL.');
   }
   browserLinks.set(origin, parsed.href);
-  byId('browser-links').replaceChildren();
-  for (const [airport, liveUrl] of browserLinks) {
-    const entry = document.createElement('div');
-    entry.className = 'browser-entry';
-    const link = document.createElement('a');
-    link.href = liveUrl;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.textContent = `Open ${airport} live browser`;
-    const view = document.createElement('button');
-    view.type = 'button';
-    view.textContent = `View ${airport} here`;
-    view.addEventListener('click', () => {
-      byId('live-browser').src = liveUrl;
-      byId('live-browser').hidden = false;
-    });
-    entry.append(link, view);
-    byId('browser-links').append(entry);
+  renderBrowsers();
+}
+
+function updateBrowserStream(payload, isFrame = false) {
+  if (isFrame && (payload.mime_type !== 'image/jpeg' || typeof payload.data !== 'string' || !payload.data)) return;
+  const origin = payload.origin || 'search';
+  let stream = browserStreams.get(origin);
+  if (stream && stream.browserSessionId !== payload.browser_session_id) {
+    // A delayed frame from an earlier browser must not replace the current preview.
+    if (isFrame || payload.status !== 'starting') return;
+    stream = null;
   }
-  byId('live-browser').src = parsed.href;
-  byId('live-browser').hidden = false;
+  const newStream = !stream;
+  if (!stream) {
+    stream = { browserSessionId: payload.browser_session_id, status: 'starting', frame: null };
+    browserStreams.set(origin, stream);
+  }
+  if (isFrame) {
+    stream.frame = `data:image/jpeg;base64,${payload.data}`;
+    if (stream.status === 'starting' || stream.status === 'live') stream.status = 'live';
+    if (newStream || !selectedOrigin) renderBrowsers();
+    else if (origin === selectedOrigin) renderBrowserPreview();
+  } else {
+    stream.status = payload.status;
+    // Follow each active browser as the worker moves through origins.
+    if (payload.status === 'starting') selectedOrigin = origin;
+    renderBrowsers();
+  }
 }
 
 function renderResult(result) {
@@ -116,6 +179,13 @@ function handleMessage(message) {
     case 'browser.live_view':
       addBrowser(payload.origin || 'search', payload.url);
       log(`${payload.origin || 'Search'} browser is ready`, message.timestamp);
+      break;
+    case 'browser.stream':
+      updateBrowserStream(payload);
+      log(`${payload.origin || 'Search'} live preview: ${payload.status}`, message.timestamp);
+      break;
+    case 'browser.frame':
+      updateBrowserStream(payload, true);
       break;
     case 'search.result':
       renderResult(payload.result);
@@ -168,6 +238,10 @@ connectButton.addEventListener('click', () => {
   });
   newSocket.addEventListener('close', () => {
     byId('connection-status').textContent = 'Disconnected';
+    for (const stream of browserStreams.values()) {
+      if (stream.status === 'starting' || stream.status === 'live') stream.status = 'disconnected';
+    }
+    renderBrowserPreview();
     if (busy) {
       byId('search-status').textContent = 'Disconnected during search. Its final status is unknown; reconnect before starting another search.';
     }
@@ -202,10 +276,10 @@ form.addEventListener('submit', (event) => {
   showError('');
   originStatuses.clear();
   browserLinks.clear();
+  browserStreams.clear();
+  selectedOrigin = null;
   renderOriginStatuses();
-  byId('browser-links').textContent = 'Waiting for a live browser…';
-  byId('live-browser').removeAttribute('src');
-  byId('live-browser').hidden = true;
+  renderBrowsers();
   byId('flights').replaceChildren();
   byId('results-table').hidden = true;
   byId('raw-result').hidden = true;

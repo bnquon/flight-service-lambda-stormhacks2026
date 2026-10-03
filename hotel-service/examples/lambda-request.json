@@ -1,0 +1,10 @@
+{
+  "session_id": "hotel-test-123",
+  "destination": "Tokyo, Japan",
+  "check_in": "2027-04-10",
+  "check_out": "2027-04-20",
+  "adults": 2,
+  "rooms": 1,
+  "currency": "CAD",
+  "budget": null
+}

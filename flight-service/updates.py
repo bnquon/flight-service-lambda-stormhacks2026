@@ -8,6 +8,10 @@ import json
 _listener = ContextVar("update_listener", default=None)
 
 
+def has_update_listener() -> bool:
+    return _listener.get() is not None
+
+
 @contextmanager
 def forward_updates(listener):
     """Scope delivery to one search, including its worker thread and async tasks."""
@@ -27,7 +31,9 @@ def publish_update(session_id: str, search_id: str, message_type: str, **payload
         "timestamp": datetime.now(timezone.utc).isoformat(),
         **payload,
     }
-    print(json.dumps(event), flush=True)
+    # Frames belong only on the live transport, never in terminal/CloudWatch logs.
+    if message_type != "browser.frame":
+        print(json.dumps(event), flush=True)
     listener = _listener.get()
     if listener is not None:
         listener(event)

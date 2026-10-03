@@ -43,9 +43,10 @@
 
     <section aria-labelledby="browser-heading">
       <h2 id="browser-heading">Live browser</h2>
-      <p>Skyvern may require login or block embedding. Use the browser link if the frame doesn't load. The live session ends when the search finishes.</p>
-      <div id="browser-links"><p>Live links appear when a browser starts.</p></div>
-      <iframe id="live-browser" title="Skyvern live browser" hidden referrerpolicy="no-referrer"></iframe>
+      <p>Watch the browser here as it searches. Select an origin to switch previews. The live session ends when the search finishes.</p>
+      <div id="browser-links" aria-label="Browser previews by origin"></div>
+      <p id="browser-status" role="status">Waiting for a live browser…</p>
+      <img id="live-browser" alt="Live browser preview" hidden>
     </section>
 
     <section aria-labelledby="results-heading">

@@ -5,6 +5,7 @@ atlas-credentials.env
 __pycache__/
 *.pyc
 .venv/
-artifacts/search-result.json
-artifacts/lambda-*
-artifacts/playwright-*
+flight-service/artifacts/search-result.json
+flight-service/artifacts/lambda-*
+flight-service/artifacts/playwright-*
+hotel-service/artifacts/

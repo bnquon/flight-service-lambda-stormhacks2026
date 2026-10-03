@@ -10,15 +10,12 @@ from request import SearchRequest
 
 WEBSITE = "google_flights"
 
-FLIGHT_FIELDS = {
-    "airline": {"type": "string", "minLength": 1},
-    "outbound_departure_time_text": {"type": "string", "minLength": 1},
-    "outbound_arrival_time_text": {"type": "string", "minLength": 1},
-    "outbound_duration_text": {"type": "string", "minLength": 1},
-    "outbound_stops": {"type": "integer", "minimum": 0},
-    "price": {"type": "number", "exclusiveMinimum": 0},
-    "currency": {"type": "string"},
-}
+TEXT_FIELDS = (
+    "airline", "outbound_departure_time_text", "outbound_arrival_time_text",
+    "outbound_duration_text", "currency",
+)
+FLIGHT_FIELDS = (*TEXT_FIELDS, "outbound_stops", "price")
+
 
 def validate_extraction(data: object, request: SearchRequest, origin: str) -> list[dict]:
     # Website data is an external boundary: reject malformed fares and mismatched settings.
@@ -40,10 +37,10 @@ def validate_extraction(data: object, request: SearchRequest, origin: str) -> li
         raise ValueError("Extraction outcome does not match the flight list.")
     validated = []
     for flight in flights:
-        if not isinstance(flight, dict) or not FLIGHT_FIELDS.keys() <= flight.keys():
+        if not isinstance(flight, dict) or not set(FLIGHT_FIELDS) <= flight.keys():
             raise ValueError("Missing flight details.")
-        for field, schema in FLIGHT_FIELDS.items():
-            if schema["type"] == "string" and (
+        for field in TEXT_FIELDS:
+            if (
                 not isinstance(flight[field], str) or not flight[field].strip()
             ):
                 raise ValueError("Missing flight details.")
