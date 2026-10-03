@@ -79,6 +79,49 @@ return final JSON and have **no public WebSocket endpoint**. For a Next.js app,
 use the [integration guide](docs/nextjs-integration.md); publishing the frontend
 alone doesn't deploy a live-search backend.
 
+## Calling the deployed services over HTTP
+
+The public Lambda Function URLs are:
+
+| Service | URL |
+| --- | --- |
+| Flights | https://oi4ykhnpbgrgeedjtljdjdg6qe0luuug.lambda-url.us-west-2.on.aws/ |
+| Hotels | https://qhz6talpesw4nfnbipkxnxxsq40ivfah.lambda-url.us-west-2.on.aws/ |
+
+The root [.env.example](.env.example) defines `FLIGHT_SERVICE_URL` and
+`HOTEL_SERVICE_URL`. They are also saved in the ignored root `.env`. Copy these
+variables into the **orchestrator/backend's environment** to configure its HTTP
+calls. The search Lambdas themselves do not need these variables. The URLs are
+public addresses, not API keys; keep AWS, Skyvern, and Mongo credentials private.
+
+Send a `POST` with `Content-Type: application/json` and the matching service's
+[request fields](#expected-inputs). For example, from a JavaScript backend:
+
+```js
+const response = await fetch(process.env.HOTEL_SERVICE_URL, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    session_id: "trip-123",
+    destination: "Tokyo, Japan",
+    check_in: "2027-04-10",
+    check_out: "2027-04-20",
+    adults: 2,
+    currency: "CAD",
+  }),
+});
+const result = await response.json();
+if (!response.ok) throw new Error(result.error?.message ?? "Hotel request failed");
+// Check result.status too: a search can return HTTP 200 with status "failed".
+```
+
+Function URLs return the final record as the HTTP JSON body; callers do **not**
+parse a nested `body` string. The Lambda wrapper below applies to direct AWS SDK
+invocations. HTTP calls wait for the full search and storage to finish, so the
+calling backend must allow enough time for the search. These URLs do not deliver
+WebSocket updates or live browser frames. Backend-to-backend calls do not need
+CORS; direct browser calls from another origin need CORS configured on the URL.
+
 ## Expected inputs
 
 Send a JSON request directly to the appropriate Lambda. These services search;
