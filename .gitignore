@@ -7,3 +7,4 @@ __pycache__/
 .venv/
 artifacts/search-result.json
 artifacts/lambda-*
+artifacts/playwright-*

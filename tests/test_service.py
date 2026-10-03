@@ -42,7 +42,7 @@ def extracted_results(request, origin, prices):
 
 
 def cloud_browser(session_id, extraction, url="https://example.test/watch"):
-    page = SimpleNamespace(page=object(), extract=AsyncMock(return_value=extraction))
+    page = SimpleNamespace(page=object(), extraction=extraction)
     browser = SimpleNamespace(
         browser_session_id=session_id, app_url=url,
         get_working_page=AsyncMock(return_value=page), close=AsyncMock(),
@@ -54,8 +54,14 @@ class SearchCases(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.navigate = AsyncMock()
         self.events = Mock()
+
+        async def extract(page, request, origin):
+            return service.google_flights.validate_extraction(page.extraction, request, origin)
+
+        self.extract = AsyncMock(side_effect=extract)
         for target, replacement in (
             ("service.google_flights.navigate", self.navigate),
+            ("service.google_flights.extract_flights", self.extract),
             ("service.publish_update", self.events),
             ("service.logging.exception", Mock()),
         ):
@@ -104,9 +110,10 @@ class SearchCases(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "complete")
         self.assertIsNone(result["request"]["return_date"])
         self.assertEqual(result["flights"][0]["price"], 500)
-        prompt = browser.get_working_page.return_value.extract.await_args.args[0]
-        self.assertIn("one_way from YVR", prompt)
-        self.assertNotIn(", returning 2027-04-20", prompt)
+        self.extract.assert_awaited_once_with(browser.get_working_page.return_value, request, "YVR")
+        extracted_request = self.extract.await_args.args[1]
+        self.assertEqual(extracted_request.trip_type, "one_way")
+        self.assertIsNone(extracted_request.return_date)
 
     async def test_non_cad_currency_is_preserved(self):
         request = search_request(currency="usd")
@@ -179,7 +186,7 @@ class SearchCases(unittest.IsolatedAsyncioTestCase):
         self.navigate.side_effect = TimeoutError("results never loaded")
         result = await self.run_search(request, browser)
         self.assertEqual(result["status"], "failed")
-        browser.get_working_page.return_value.extract.assert_not_awaited()
+        self.extract.assert_not_awaited()
 
     async def test_cleanup_failure_preserves_valid_fares(self):
         request = search_request()

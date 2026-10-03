@@ -20,7 +20,6 @@ async def navigate(page, request: SearchRequest, origin: str) -> None:
     await select_airport(page, "Where from?", origin)
     await select_airport(page, "Where to?", request.destination)
     if request.trip_type == "one_way":
-        # TODO: verify this branch live; the observed/tested flow is round-trip.
         await page.get_by_role("combobox").filter(has_text="Round trip").click()
         await page.get_by_role("option", name="One way", exact=True).click()
 
@@ -46,4 +45,4 @@ async def navigate(page, request: SearchRequest, origin: str) -> None:
     )
     # Verify route/dates from extracted page settings, not Google's internal URL encoding.
     await page.get_by_role("button", name=f"Currency {request.currency}", exact=True).wait_for()
-    # TODO: verify no-results and non-CAD variants with real searches before production.
+    # TODO: verify no-results and additional currencies with real searches before production.

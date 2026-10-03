@@ -1,0 +1,177 @@
+{
+  "cards": [
+    {
+      "label": "From 1324 Canadian dollars round trip total. 1 stop flight with Philippine Airlines. Leaves Vancouver International Airport at 11:55 PM on Saturday, April 10 and arrives at Narita International Airport at 1:00 PM on Monday, April 12. Total duration 21 hr 5 min.  Layover (1 of 1) is a 2 hr layover at Ninoy Aquino International Airport in Manila. Select flight",
+      "departure": "11:55 PM",
+      "arrival": "1:00 PM+2",
+      "duration": "21 hr 5 min",
+      "airline": "Philippine Airlines"
+    },
+    {
+      "label": "From 1385 Canadian dollars round trip total. 2 stops flight with WestJet. Operated by Westjet Encore, Westjet Encore. Leaves Vancouver International Airport at 8:55 AM on Saturday, April 10 and arrives at Narita International Airport at 4:25 PM on Sunday, April 11. Total duration 15 hr 30 min.  Layover (1 of 2) is a 50 min layover at Kelowna International Airport in Kelowna. Layover (2 of 2) is a 1 hr 40 min layover at Calgary International Airport in Calgary. Select flight",
+      "departure": "8:55 AM",
+      "arrival": "4:25 PM+1",
+      "duration": "15 hr 30 min",
+      "airline": "WestJet\u00b7Operated by Westjet Encore, Westjet Encore"
+    },
+    {
+      "label": "From 1406 Canadian dollars round trip total. 1 stop flight with WestJet. Leaves Vancouver International Airport at 11:00 AM on Saturday, April 10 and arrives at Narita International Airport at 4:25 PM on Sunday, April 11. Total duration 13 hr 25 min.  Layover (1 of 1) is a 1 hr 10 min layover at Calgary International Airport in Calgary. Select flight",
+      "departure": "11:00 AM",
+      "arrival": "4:25 PM+1",
+      "duration": "13 hr 25 min",
+      "airline": "WestJet"
+    },
+    {
+      "label": "From 1919 Canadian dollars round trip total. Nonstop flight with Air Canada. Leaves Vancouver International Airport at 1:00 PM on Saturday, April 10 and arrives at Narita International Airport at 2:55 PM on Sunday, April 11. Total duration 9 hr 55 min.   Select flight",
+      "departure": "1:00 PM",
+      "arrival": "2:55 PM+1",
+      "duration": "9 hr 55 min",
+      "airline": "Air Canada\u00b7ANA"
+    },
+    {
+      "label": "From 1987 Canadian dollars round trip total. Nonstop flight with JAL. Leaves Vancouver International Airport at 1:50 PM on Saturday, April 10 and arrives at Narita International Airport at 3:50 PM on Sunday, April 11. Total duration 10 hr.   Select flight",
+      "departure": "1:50 PM",
+      "arrival": "3:50 PM+1",
+      "duration": "10 hr",
+      "airline": "JAL\u00b7American, WestJet"
+    },
+    {
+      "label": "From 1406 Canadian dollars round trip total. 1 stop flight with WestJet. Leaves Vancouver International Airport at 10:20 PM on Saturday, April 10 and arrives at Narita International Airport at 4:25 PM on Monday, April 12. Total duration 26 hr 5 min.  Layover (1 of 1) is a 13 hr 50 min layover at Calgary International Airport in Calgary. Select flight",
+      "departure": "10:20 PM",
+      "arrival": "4:25 PM+2",
+      "duration": "26 hr 5 min",
+      "airline": "WestJet"
+    },
+    {
+      "label": "From 1707 Canadian dollars round trip total. 1 stop flight with Korean Air and Asiana Airlines. Leaves Vancouver International Airport at 12:55 AM on Saturday, April 10 and arrives at Narita International Airport at 10:50 AM on Sunday, April 11. Total duration 17 hr 55 min.  Layover (1 of 1) is a 4 hr layover at Incheon International Airport in Seoul. Select flight",
+      "departure": "12:55 AM",
+      "arrival": "10:50 AM+1",
+      "duration": "17 hr 55 min",
+      "airline": "Korean Air, Asiana Airlines"
+    },
+    {
+      "label": "From 1707 Canadian dollars round trip total. 1 stop flight with Korean Air. Leaves Vancouver International Airport at 12:55 AM on Saturday, April 10 and arrives at Narita International Airport at 12:40 PM on Sunday, April 11. Total duration 19 hr 45 min.  Layover (1 of 1) is a 5 hr 45 min layover at Incheon International Airport in Seoul. Select flight",
+      "departure": "12:55 AM",
+      "arrival": "12:40 PM+1",
+      "duration": "19 hr 45 min",
+      "airline": "Korean Air"
+    },
+    {
+      "label": "From 1845 Canadian dollars round trip total. 1 stop flight with China Airlines. Leaves Vancouver International Airport at 2:00 AM on Saturday, April 10 and arrives at Narita International Airport at 1:15 PM on Sunday, April 11. Total duration 19 hr 15 min.  Layover (1 of 1) is a 3 hr 20 min layover at Taiwan Taoyuan International Airport in Taipei City. Select flight",
+      "departure": "2:00 AM",
+      "arrival": "1:15 PM+1",
+      "duration": "19 hr 15 min",
+      "airline": "China Airlines"
+    }
+  ],
+  "expected": [
+    {
+      "airline": "Philippine Airlines",
+      "outbound_departure_time_text": "11:55 PM",
+      "outbound_arrival_time_text": "1:00 PM+2",
+      "outbound_duration_text": "21 hr 5 min",
+      "outbound_stops": 1,
+      "price": 1324,
+      "currency": "CAD",
+      "origin": "YVR",
+      "destination": "NRT",
+      "website": "google_flights"
+    },
+    {
+      "airline": "WestJet (Operated by Westjet Encore, Westjet Encore)",
+      "outbound_departure_time_text": "8:55 AM",
+      "outbound_arrival_time_text": "4:25 PM+1",
+      "outbound_duration_text": "15 hr 30 min",
+      "outbound_stops": 2,
+      "price": 1385,
+      "currency": "CAD",
+      "origin": "YVR",
+      "destination": "NRT",
+      "website": "google_flights"
+    },
+    {
+      "airline": "WestJet",
+      "outbound_departure_time_text": "11:00 AM",
+      "outbound_arrival_time_text": "4:25 PM+1",
+      "outbound_duration_text": "13 hr 25 min",
+      "outbound_stops": 1,
+      "price": 1406,
+      "currency": "CAD",
+      "origin": "YVR",
+      "destination": "NRT",
+      "website": "google_flights"
+    },
+    {
+      "airline": "WestJet",
+      "outbound_departure_time_text": "10:20 PM",
+      "outbound_arrival_time_text": "4:25 PM+2",
+      "outbound_duration_text": "26 hr 5 min",
+      "outbound_stops": 1,
+      "price": 1406,
+      "currency": "CAD",
+      "origin": "YVR",
+      "destination": "NRT",
+      "website": "google_flights"
+    },
+    {
+      "airline": "Korean Air, Asiana Airlines",
+      "outbound_departure_time_text": "12:55 AM",
+      "outbound_arrival_time_text": "10:50 AM+1",
+      "outbound_duration_text": "17 hr 55 min",
+      "outbound_stops": 1,
+      "price": 1707,
+      "currency": "CAD",
+      "origin": "YVR",
+      "destination": "NRT",
+      "website": "google_flights"
+    },
+    {
+      "airline": "Korean Air",
+      "outbound_departure_time_text": "12:55 AM",
+      "outbound_arrival_time_text": "12:40 PM+1",
+      "outbound_duration_text": "19 hr 45 min",
+      "outbound_stops": 1,
+      "price": 1707,
+      "currency": "CAD",
+      "origin": "YVR",
+      "destination": "NRT",
+      "website": "google_flights"
+    },
+    {
+      "airline": "China Airlines",
+      "outbound_departure_time_text": "2:00 AM",
+      "outbound_arrival_time_text": "1:15 PM+1",
+      "outbound_duration_text": "19 hr 15 min",
+      "outbound_stops": 1,
+      "price": 1845,
+      "currency": "CAD",
+      "origin": "YVR",
+      "destination": "NRT",
+      "website": "google_flights"
+    },
+    {
+      "airline": "Air Canada \u00b7 ANA",
+      "outbound_departure_time_text": "1:00 PM",
+      "outbound_arrival_time_text": "2:55 PM+1",
+      "outbound_duration_text": "9 hr 55 min",
+      "outbound_stops": 0,
+      "price": 1919,
+      "currency": "CAD",
+      "origin": "YVR",
+      "destination": "NRT",
+      "website": "google_flights"
+    },
+    {
+      "airline": "JAL \u00b7 American, WestJet",
+      "outbound_departure_time_text": "1:50 PM",
+      "outbound_arrival_time_text": "3:50 PM+1",
+      "outbound_duration_text": "10 hr",
+      "outbound_stops": 0,
+      "price": 1987,
+      "currency": "CAD",
+      "origin": "YVR",
+      "destination": "NRT",
+      "website": "google_flights"
+    }
+  ]
+}

@@ -21,7 +21,7 @@ def run_search(request: SearchRequest) -> dict | None:
     # Check browser dependencies before launch can create a billable cloud session.
     import skyvern.library.skyvern_browser
 
-    # AI extraction can exceed the SDK's default 60-second API timeout.
+    # Bound cloud API calls; flight extraction uses the raw Playwright page.
     skyvern = Skyvern(api_key=api_key, timeout=180)
     # TODO: move execution behind an asynchronous job boundary for production.
     result = asyncio.run(search_origins(skyvern, request))

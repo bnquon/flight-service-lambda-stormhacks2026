@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flight search test</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Flight search test</h1>
+    <p>Local test bridge using the same search code as Lambda. No deployed Lambda connection yet.</p>
+
+    <section aria-labelledby="connection-heading">
+      <h2 id="connection-heading">Connection</h2>
+      <div class="connection-controls">
+        <label>WebSocket URL <input id="websocket-url" type="url" value="ws://127.0.0.1:8765" required></label>
+        <button id="connect" type="button">Connect</button>
+        <button id="disconnect" type="button" disabled>Disconnect</button>
+      </div>
+      <p id="connection-status" role="status">Disconnected</p>
+    </section>
+
+    <section aria-labelledby="search-heading">
+      <h2 id="search-heading">Search</h2>
+      <form id="search-form">
+        <div class="fields">
+          <label>Origins (comma separated) <input name="origins" value="YVR" required placeholder="YVR, YYZ"></label>
+          <label>Destination <input name="destination" value="NRT" required minlength="3" maxlength="3"></label>
+          <label>Departure <input name="departure_date" type="date" value="2027-04-10" required></label>
+          <label id="return-label">Return <input name="return_date" type="date" value="2027-04-20" required></label>
+          <label>Trip <select name="trip_type"><option value="round_trip">Round trip</option><option value="one_way">One way</option></select></label>
+          <label>Currency <input name="currency" value="CAD" required minlength="3" maxlength="3"></label>
+          <label>Budget per person (optional) <input name="budget" type="number" min="0.01" step="0.01" placeholder="No limit"></label>
+        </div>
+        <button id="start" type="submit" disabled>Start search</button>
+      </form>
+      <p id="search-status" role="status">Connect to start a search.</p>
+      <ul id="origin-statuses" aria-label="Status for each origin"></ul>
+      <p id="error" role="alert" hidden></p>
+    </section>
+
+    <section aria-labelledby="browser-heading">
+      <h2 id="browser-heading">Live browser</h2>
+      <p>Skyvern may require login or block embedding. Use the browser link if the frame doesn't load. The live session ends when the search finishes.</p>
+      <div id="browser-links"><p>Live links appear when a browser starts.</p></div>
+      <iframe id="live-browser" title="Skyvern live browser" hidden referrerpolicy="no-referrer"></iframe>
+    </section>
+
+    <section aria-labelledby="results-heading">
+      <h2 id="results-heading">Results</h2>
+      <p id="results-summary">No results yet.</p>
+      <div class="table-wrap">
+        <table id="results-table" hidden>
+          <thead><tr><th>Route</th><th>Airline</th><th>Departure</th><th>Arrival</th><th>Duration</th><th>Stops</th><th>Price</th></tr></thead>
+          <tbody id="flights"></tbody>
+        </table>
+      </div>
+      <details id="raw-result" hidden><summary>Result JSON</summary><pre id="result-json"></pre></details>
+    </section>
+
+    <section aria-labelledby="events-heading">
+      <h2 id="events-heading">Events</h2>
+      <p>Disconnecting doesn't cancel a running search. Wait for it to finish before starting another.</p>
+      <pre id="events" aria-live="polite">Waiting for connection.</pre>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,8 +1,8 @@
 # Flight search Lambda
 
 Python request validation and Google Flights search through Skyvern Cloud.
-Use Python 3.12 or 3.13 for deployment. Skyvern provides the remote browser and AI
-extraction SDK; PyMongo stores results.
+Use Python 3.12 or 3.13 for deployment. Skyvern provides the remote browser;
+Playwright reads Google Flights directly, and PyMongo stores results.
 Both direct dependencies are pinned in `requirements.txt`.
 Version 1.0.55 requires its `local` extra for the browser/page API even when the
 browser runs in Skyvern Cloud. This installs substantial transitive dependencies.
@@ -13,17 +13,20 @@ and progress messages an orchestrator can expect.
 ## Progress and next steps
 
 Last updated: October 3, 2026. The search slice is deployed to Lambda and has passed
-one successful live search. Final-result MongoDB persistence is implemented; backend delivery
-and the asynchronous production flow are still missing. Implementation and live verification are tracked separately.
+successful live searches. Direct Playwright extraction and final-result MongoDB
+persistence are verified locally and in Lambda; backend delivery and the
+asynchronous production flow are still missing.
 
 ### Implemented
 
 - [x] Python Lambda handler with direct/proxy input and structured errors.
 - [x] Request validation; round-trip/CAD defaults; multiple origins and optional budget.
 - [x] Google Flights navigation through Playwright in a Skyvern cloud browser.
-- [x] Structured extraction, search-setting validation, source attribution, and price sorting.
+- [x] Direct Playwright extraction, search-setting validation, source attribution, and price sorting.
 - [x] Separate browser per origin, partial failure handling, deadlines, and cleanup.
 - [x] Versioned status and watch-link events printed to stdout.
+- [x] Simple local frontend and WebSocket bridge for real search progress and results
+  (implemented; browser-to-bridge testing is manual).
 - [x] Best-effort recording metadata lookup with all segments in final JSON.
 - [x] Contract examples and local setup instructions.
 - [x] Lambda Dockerfile and allowlist for the Docker build context.
@@ -31,19 +34,19 @@ and the asynchronous production flow are still missing. Implementation and live 
   direct handler execution with a read-only filesystem and writable `/tmp`.
 - [x] Pushed the image to ECR and deployed Lambda in `us-west-2`.
 - [x] Deployed live search returned nine flights; invalid input returned `400`.
-- [x] Standards/simplicity review and 46 passing offline tests at this checkpoint.
+- [x] Standards/simplicity review and 62 passing offline tests at this checkpoint.
 - [x] Save final search records in MongoDB, using `search_id` as `_id`.
 
 ### What has actually been verified
 
 | Capability | Evidence | Still missing |
 | --- | --- | --- |
-| Round-trip Google Flights extraction in CAD | Local and deployed YVR–NRT searches returned nine structured fares; deployed run used the refactored code. | Broader routes and page variants. |
+| Round-trip Google Flights extraction in CAD | Direct Playwright returned the same nine flight objects as the previous AI run: local handler 35.4 seconds, Lambda 41.4 seconds. | Broader routes and page variants. |
 | Multiple origins, budget filtering, empty results, and partial failures | Offline tests pass with fake browser/extraction responses. | Live multi-origin and explicit no-flights cases. |
-| One-way and other currencies | Request/extraction/service logic passes offline tests. | Live navigation and extraction checks. |
+| One-way and USD | Full local Playwright search returned eight USD fares in 34.2 seconds with zero AI calls. | Live deployed one-way and additional currencies. |
 | Recording creation | Deployed session closed successfully; immediate response had no recordings, later metadata lookup returned one. | Deferred metadata refresh, URL expiry, and retention. |
 | Live viewing | Browser was viewable in Skyvern's dashboard during earlier runs. | Frontend embedding, viewer authentication, and access behavior. |
-| Status messaging | JSON envelopes are implemented and tested locally. | Actual delivery to the orchestrator/frontend. |
+| Status messaging | JSON envelopes and a local WebSocket bridge/frontend are implemented. | Manual frontend test; deployed orchestrator transport. |
 | MongoDB storage | Lambda saved both a failed-search record and a successful nine-fare search. The successful document matched the entire response body exactly on read-back. | Restrict network access for production; add result retrieval. |
 | Lambda deployment | Active in account `481665099496`, `us-west-2`; live search and invalid-input checks passed. | Other live cases and production integration. |
 
@@ -52,13 +55,13 @@ live selector reliability, extraction accuracy, recording availability, or strea
 
 ### Next search and recording checks
 
-1. [ ] Inspect Google Flights result cards and implement Playwright extraction into
-   the same JSON contract; compare output with known fares before replacing AI extraction.
-2. [ ] Run a live one-way search and a round-trip search with two origins; inspect
-   actual Google settings, JSON fares, and session cleanup. These additional paid
-   live cases have not been run; the deployed check covered one round-trip origin.
-3. [ ] Check a non-CAD search, an explicit no-flights page, and consent-dialog
-   behavior. Only change selectors or handling when these cases show a real need.
+1. [x] Replace AI extraction with Playwright. A full local round-trip run returned
+   the same nine flight objects field-for-field, made zero AI calls, and verified Mongo storage.
+2. [ ] Run a deployed one-way search and a round-trip search with two origins; inspect
+   actual Google settings, JSON fares, and session cleanup. Local one-way/USD passed;
+   the deployed checks covered one round-trip origin.
+3. [ ] Check additional currencies, an explicit no-flights page, and consent-dialog
+   behavior. Local USD passed. Change handling when a live case shows a real need.
 4. [ ] Decide how to refresh recording metadata after completion: the deployed test
    confirmed recordings can appear after the immediate lookup. Verify expiry and
    retention, and multiple segments when available.
@@ -368,9 +371,12 @@ invoked directly. Unexpected setup failures surface as Lambda invocation errors.
 
 Each origin gets a separate cloud browser, searched sequentially. Direct Playwright
 actions navigate the Google Flights form using inspected labels and roles.
-Then Skyvern's `page.extract(..., schema=...)` reads the displayed flight cards
-into JSON without an AI navigation task. Google-specific validation checks the
-extracted route/dates/currency and fare basis. The service applies the optional
+Playwright reads flight-card accessibility labels and displayed times, duration,
+and airline spans directly. It reads the selected airports, ticket type, cabin,
+passenger count, currency, and full calendar dates; result fares must confirm one
+adult. Round-trip labels must explicitly confirm total fare basis. Observed one-way
+labels omit that phrase, so their basis comes from the verified page ticket type.
+Google-specific validation checks the extracted settings and fare fields. The service applies the optional
 budget and sorts the combined flights once. An unreliable origin fails without erasing other origin results.
 Empty results are successful only for a confirmed no-flights page, or when all valid
 extracted fares exceed the budget. Visible cards are not an exhaustive search.
@@ -385,8 +391,9 @@ Navigation confirms calendar dates and currency; extraction validates the actual
 page settings. Google's internal URL encoding is deliberately not parsed.
 
 Status and browser-view messages are versioned JSON printed to stdout by
-`publish_update`. They do not reach the frontend yet. The WebSocket destination
-is still a TODO; MongoDB stores the final result after the search finishes.
+`publish_update`. The local WebSocket bridge also forwards them to the test
+frontend. Deployed orchestrator delivery is still a TODO; MongoDB stores the
+final result after the search finishes.
 
 ## Manual setup
 
@@ -538,9 +545,9 @@ After the image check succeeds:
 
 Profile `flight-deploy` now authenticates as `flight-service` in account
 `481665099496`, region `us-west-2`. ECR and Lambda access checks succeeded.
-Repository `flight-search-service` contains the current image tag `mongo`.
-Image URI: `481665099496.dkr.ecr.us-west-2.amazonaws.com/flight-search-service:mongo`.
-Deployed digest: `sha256:0f96d4a93c8a6c90d911e3c0698fbc6cfccfcd39a2c2cebeb7ffa14fdd050535`.
+Repository `flight-search-service` contains the current image tag `playwright`.
+Image URI: `481665099496.dkr.ecr.us-west-2.amazonaws.com/flight-search-service:playwright`.
+Deployed digest: `sha256:7039e10f0559142549d0c628b0c0701662684e1073fe8dcf80ae39849d24bfbc`.
 The account administrator created the execution role:
 
 - Name: `flight-search-service-lambda`
@@ -576,10 +583,11 @@ Lambda duration was 108.0 seconds. The retry response, parsed result, verificati
 summary, and log tail are in `artifacts/lambda-mongo-*`. The successful save
 confirms that the Atlas access-list change resolved the deployed Mongo connection
 issue; the Skyvern timeout is a separate unresolved search failure.
-The updated image is deployed. The Skyvern client API timeout is explicitly
-180 seconds instead of the
+Before switching to Playwright extraction, the Skyvern client API timeout was
+set to 180 seconds instead of the
 SDK default of 60 seconds. The per-origin search deadline remains 240 seconds.
-This allows longer extraction responses; it does not speed up AI or guarantee success.
+That allowed longer AI responses. The current flow keeps the cloud API timeout
+but no longer calls AI extraction.
 The 180-second timeout was verified with a fresh paid live Lambda search.
 It returned `statusCode: 200`, `status: complete`, and nine CAD flights, sorted by
 price from CAD 1,324 to CAD 1,987. MongoDB read-back matched the complete
@@ -639,8 +647,8 @@ The live test request is saved in `examples/lambda-request.json`.
 Implementation follows the official [browser automation guide](https://github.com/Skyvern-AI/skyvern/blob/main/docs/developers/browser-automations/overview.mdx)
 and [actions reference](https://github.com/Skyvern-AI/skyvern/blob/main/docs/developers/browser-automations/actions-reference.mdx):
 `launch_cloud_browser`, `get_working_page`, direct Playwright actions,
-`page.extract` with a schema, and `browser.close`. Extraction JSON is returned to
-this service; it is not a task-run `output` from `agent.run_task`.
+and `browser.close`. Google Flights extraction now uses the raw Playwright page;
+there are no `page.extract` or AI action calls in the search flow.
 The [cloud browser reference](https://github.com/Skyvern-AI/skyvern/blob/main/docs/sdk-reference/browser-automation/launch-cloud-browser.mdx)
 defines the browser timeout in minutes. The dependency is pinned to the
 [published 1.0.55 release](https://pypi.org/project/skyvern/1.0.55/).
@@ -650,8 +658,7 @@ it remains null if the SDK does not provide one.
 It is not a verified public embed URL or a replay URL. Authentication and embedding
 still need verification before frontend integration.
 The Playwright test confirmed that Skyvern produces a recording for direct actions.
-No screenshot capture/storage is added by this service; Skyvern uses screenshots
-internally for its AI actions.
+No screenshot capture/storage is added by this service.
 
 ## Recording metadata
 
@@ -696,9 +703,10 @@ browser cleanup, cancellation, and exhaustion of the shared time budget.
 They also cover recording segments, empty/failed metadata lookup, skipped lookup
 after failed cleanup, and recordings from failed extractions.
 
-Service tests run the real extraction/validation code against fake extracted JSON;
-navigation is mocked. Passing these tests does not verify live Google selectors,
-AI extraction accuracy, recording, streaming, or the one-way/no-results page variants.
+Service tests mock navigation and extraction, then run real contract validation
+against fake results. DOM parsing tests use nine captured cards and compare all
+flight fields with the previous AI output. Passing offline tests does not verify
+live Google selectors, recording, streaming, or no-results page variants.
 Those still need separate live searches. No-result suggestions remain unimplemented.
 
 ## Separate Playwright navigation test
@@ -727,9 +735,10 @@ the current navigation code uses calendar confirmation instead of URL decoding. 
 a single-run measurement, not a guaranteed runtime or evidence of stable selectors
 across every Google Flights variant.
 
-One-way, non-CAD, no-results, and consent-dialog variants still need live checks.
+Local one-way/USD now passed in the full extraction flow. Live no-results,
+additional currencies, and consent-dialog variants still need checks.
 
-## JSON extraction check
+## Previous AI extraction check
 
 The Lambda flow was tested with YVR/NRT, April 10–20, 2027, round-trip, CAD.
 Playwright navigation followed by Skyvern extraction returned `status: complete`
@@ -737,3 +746,235 @@ and nine structured flight results sorted by price. Total elapsed time was 82.2
 seconds including browser startup and cleanup. The local result is saved in
 `artifacts/search-result.json` (ignored by Git); fares can change on later runs.
 Use the handler example above with `.env` loaded to run another paid search.
+
+
+## Playwright extraction verification
+
+The new full local round-trip YVR–NRT search for April 10–20, 2027 in CAD
+completed in 35.4 seconds for the handler, including browser startup, navigation,
+extraction, cleanup, and Mongo save. Initial Python/SDK imports occurred before
+the local timer; the Lambda measurement below includes runtime handler setup. All nine flight objects matched the earlier AI result exactly,
+including operator/partner airlines and next-day markers. The test prohibited
+Skyvern AI action calls and observed zero. Mongo read-back matched the entire
+final response. Results and summary are in `artifacts/playwright-local-*` (ignored).
+
+Extraction relies on the inspected English accessibility labels and airline-row
+structure. Google can change these; unsupported variants fail visibly. This is
+one run, not a guaranteed latency. Live no-results, consent dialogs, and multiple
+origins still need coverage. Recordings/watch URLs still come from Skyvern Cloud.
+
+A full local one-way YVR–NRT search for April 10, 2027 in USD returned eight
+fares (USD 383–901) in 34.2 seconds with zero AI calls. The first attempt exposed
+Google's omitted one-way fare-basis phrase; the parser fix passed the live retry
+and regression tests. The output is in `artifacts/playwright-oneway-result.json`.
+
+The verified Linux/Python 3.13 image passed all 62 offline tests before the live
+Lambda check. Deployed round-trip Playwright search
+`4c5d4819-8a70-4162-a811-0b384ff6fe03` returned `status: complete` with the same
+nine flight objects as the local test and prior AI result. MongoDB read-back
+matched the complete response. Lambda execution was 41.4 seconds (versus 124.8
+seconds for the previous AI run), with 622 MB peak memory. This is a single-run
+comparison; cloud startup and Google latency can vary. Artifacts are saved in
+`artifacts/lambda-playwright-*` and excluded from Git.
+
+
+## Simple frontend / WebSocket test
+
+This is a local test harness: the Python bridge runs `lambda_handler` on your
+laptop, using the same Skyvern/Playwright/Mongo pipeline as the deployed image.
+The page sends a search request through a WebSocket and receives real progress,
+Skyvern watch links, final flights, and errors. No AWS credentials are needed.
+Starting a search uses paid Skyvern cloud-browser resources and saves to Mongo
+when configured. The deployed Lambda doesn't have a WebSocket endpoint yet.
+
+Fresh environments can install the bridge dependency with:
+
+```bash
+.venv/bin/python -m pip install -r requirements-dev.txt
+```
+
+From the repo root, **terminal 1** loads your server-side `.env` and starts the bridge:
+
+```bash
+set -a
+source .env
+set +a
+.venv/bin/python websocket_test_server.py
+```
+
+**Terminal 2** serves only the public frontend files:
+
+```bash
+python3 -m http.server 8080 --bind 127.0.0.1 --directory frontend
+```
+
+Open **http://127.0.0.1:8080**, click **Connect**, then **Start search**.
+The default request is YVR–NRT, April 10–20, 2027, round-trip, CAD.
+Inputs also support comma-separated origins, one-way, currency, and an optional budget.
+All secrets stay in the Python process; the frontend receives no Skyvern API key,
+Mongo URI, or AWS credentials. The bridge binds only to loopback and accepts the
+frontend's `localhost:8080` / `127.0.0.1:8080` origins.
+
+### What the page shows
+
+- WebSocket connection state and per-origin progress.
+- Each browser's live watch link as soon as the session is ready.
+- An iframe attempt for Skyvern's dashboard. Skyvern blocks embedding this dashboard
+  in another website, so use **Open live browser** in a separate tab for testing.
+  This harness forwards a dashboard URL, not raw video frames over the status socket.
+- Final fares and the complete JSON response after the Mongo save finishes.
+- Errors, including validation, missing configuration, and failed Mongo writes.
+
+Each connection permits one active search. Disconnecting or closing the page
+doesn't cancel the worker: it completes cleanup and storage, but the disconnected
+page won't receive further events. Reconnecting doesn't replay or recover the old
+job. Use the terminal logs/Mongo record to inspect it; a new search creates a new ID.
+An overall `search.status: complete` precedes Mongo saving, so the frontend waits
+for `search.result` before allowing another search.
+
+### Wire messages
+
+Client sends:
+
+```json
+{
+  "action": "search",
+  "request": {
+    "session_id": "frontend-test-123",
+    "origins": ["YVR"],
+    "destination": "NRT",
+    "departure_date": "2027-04-10",
+    "return_date": "2027-04-20",
+    "trip_type": "round_trip",
+    "currency": "CAD"
+  }
+}
+```
+
+Server sends the existing version-1 envelopes, with payload fields at the top level:
+
+| Type | Payload |
+| --- | --- |
+| `search.status` | `status`, optional `origin` and `error` |
+| `browser.live_view` | `origin`, `provider`, `browser_session_id`, `url` |
+| `search.result` | `result`: the complete final response body |
+| `search.error` | `error`: `code`, `message`, optional `details` |
+
+`session_id`, `search_id`, and `timestamp` identify events; IDs can be null for
+errors before a search starts. There are no fake progress events, automatic
+retries, public auth, reconnection recovery, or Lambda routing in this harness.
+
+### Connecting your own frontend
+
+Use the browser's built-in `WebSocket`; no frontend SDK or API key is needed.
+The current bridge accepts pages served from `http://localhost:8080` or
+`http://127.0.0.1:8080`. If your frontend uses another port, update the `origins`
+list in `websocket_test_server.py` first.
+
+This minimal example expects a status element, a live-view link, and a results
+element in your page:
+
+```html
+<p id="status">Connecting…</p>
+<a id="live-view" target="_blank" rel="noopener noreferrer" hidden>Watch live browser</a>
+<pre id="results"></pre>
+```
+
+```javascript
+const status = document.querySelector("#status");
+const liveView = document.querySelector("#live-view");
+const results = document.querySelector("#results");
+const sessionId = crypto.randomUUID();
+const socket = new WebSocket("ws://127.0.0.1:8765");
+
+socket.onopen = () => {
+  status.textContent = "Connected — starting search";
+  socket.send(JSON.stringify({
+    action: "search",
+    request: {
+      session_id: sessionId,
+      origins: ["YVR"],
+      destination: "NRT",
+      departure_date: "2027-04-10",
+      return_date: "2027-04-20",
+      trip_type: "round_trip",
+      currency: "CAD",
+    },
+  }));
+};
+
+socket.onmessage = ({ data }) => {
+  const event = JSON.parse(data);
+  if (event.session_id && event.session_id !== sessionId) return;
+
+  switch (event.type) {
+    case "search.status":
+      status.textContent = `${event.origin ?? "Search"}: ${event.status}`;
+      break;
+    case "browser.live_view":
+      liveView.href = event.url;
+      liveView.hidden = false;
+      break;
+    case "search.result":
+      // A final result can be complete, partially_complete, or failed.
+      status.textContent = event.result.status;
+      results.textContent = JSON.stringify(event.result, null, 2);
+      break;
+    case "search.error":
+      status.textContent = `${event.error.code}: ${event.error.message}`;
+      break;
+  }
+};
+
+socket.onerror = () => { status.textContent = "WebSocket connection error"; };
+socket.onclose = () => { status.textContent = "Disconnected"; };
+```
+
+This example starts one real search on connection. For a search button, send the
+same request only when `socket.readyState === WebSocket.OPEN`. Disable that button
+until `search.result` or a terminal `search.error` arrives; `SEARCH_BUSY` means
+the existing search is still running. The test frontend already handles this.
+For multiple origins, keep a status and watch link per `event.origin`.
+
+Typical event sequence:
+
+```text
+search.status     searching (overall)
+search.status     searching (YVR)
+browser.live_view YVR dashboard URL
+search.status     extracting (YVR)
+search.status     complete or failed (YVR)
+search.status     complete, partially_complete, or failed (overall)
+search.result     final JSON after storage finishes
+```
+
+Validation/configuration errors arrive as `search.error`. A failed browser search
+can instead arrive as `search.result` with `result.status === "failed"`; inspect
+`result.error` and `result.origins[].error`. Detailed worker exceptions are in the
+Python terminal logs. The socket delivers progress and the final JSON; it doesn't
+currently send incremental flight rows or video frames.
+
+### Live video inside your frontend
+
+**Working now:** `browser.live_view.url` opens Skyvern's live dashboard in a new
+tab. Viewing it may require a Skyvern login. The worker closes the browser when
+the origin finishes, so live viewing is available during the search. Recordings
+are separate: `result.origins[].recordings` and `replay_url` may still be empty
+when the result arrives because Skyvern processes recordings after closing.
+
+**Still to implement:** an in-page live preview. An iframe can't bypass Skyvern's
+embedding restriction. The planned approach is to capture Chrome screencast
+frames through the backend's existing Playwright CDP connection, relay them over
+a WebSocket, and display them in an `<img>` or canvas. This would be a read-only
+preview; status updates and Skyvern recording would continue independently.
+There is no `browser.frame` event or video relay implemented yet.
+
+### Connecting after deployment
+
+`ws://127.0.0.1:8765` is only the local test bridge. The deployed Lambda currently
+has no public WebSocket endpoint, and its function ARN isn't a WebSocket URL.
+A hosted frontend will need a backend/orchestrator with a `wss://` endpoint that
+starts searches and forwards these events. That backend must also relay frames
+if you want video inside the page. Authentication, allowed frontend origins,
+and reconnect/recovery behavior still need to be added for deployment.
+Keep Skyvern, Mongo, and AWS credentials on the backend.
