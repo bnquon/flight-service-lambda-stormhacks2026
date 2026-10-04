@@ -439,3 +439,19 @@ Small entrypoint/transport copies keep each Docker image independent; their
 interfaces and dependencies remain consistent.
 
 Review findings and resolutions: [code review](docs/code-review.md).
+
+## Go orchestrator completion callbacks
+
+Both search request contracts accept an optional `callback_url` (HTTP or HTTPS).
+The Go backend supplies a unique URL per invocation when its
+`ORCHESTRATOR_PUBLIC_URL` is configured. After recording processing and Mongo
+storage finish, the Lambda POSTs the complete saved search record to that URL,
+including `session_id`, `search_id`, terminal `status`, flight/hotel results,
+`recording_url`, and recording errors. This happens before returning the final
+synchronous HTTP response. No authentication is required.
+
+A supplied `callback_url` takes precedence over `FLIGHT_RESULTS_POST_URL` or
+`HOTEL_RESULTS_POST_URL`. Omitting it preserves the existing environment-based
+delivery behavior. Callback failures retain the search results and populate
+`delivery_error`; the orchestrator can use the direct response as a fallback.
+Deploy both updated Lambda images to activate the new request field.

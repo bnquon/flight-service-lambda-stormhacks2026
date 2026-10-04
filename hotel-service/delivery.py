@@ -84,9 +84,9 @@ def upload_recording(recording: dict, bucket: str, prefix: str, search_id: str) 
     return f"https://{bucket}.s3.{region}.amazonaws.com/{quote(key, safe='/')}"
 
 
-def post_results(record: dict, endpoint_variable: str) -> bool:
+def post_results(record: dict, endpoint_variable: str, callback_url: str | None = None) -> bool:
     """POST once when configured; return false if delivery failed."""
-    endpoint = configured(endpoint_variable)
+    endpoint = callback_url or configured(endpoint_variable)
     if not endpoint:
         return True
     try:

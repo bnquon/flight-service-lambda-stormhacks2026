@@ -29,7 +29,7 @@ def run_search(request: SearchRequest) -> dict | None:
     result = asyncio.run(search_origins(skyvern, request))
     from storage import save_search
     save_search(result)
-    if not post_results(result, "FLIGHT_RESULTS_POST_URL"):
+    if not post_results(result, "FLIGHT_RESULTS_POST_URL", request.callback_url):
         save_search(result)
     return result
 

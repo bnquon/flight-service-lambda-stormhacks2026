@@ -22,7 +22,7 @@ def run_search(request: SearchRequest) -> dict | None:
     result = asyncio.run(search(Skyvern(api_key=api_key, timeout=180), request))
     from storage import save_search
     save_search(result)
-    if not post_results(result, "HOTEL_RESULTS_POST_URL"):
+    if not post_results(result, "HOTEL_RESULTS_POST_URL", request.callback_url):
         save_search(result)
     return result
 

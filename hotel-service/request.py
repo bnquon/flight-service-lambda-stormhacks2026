@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from math import isfinite
 import re
+from urllib.parse import urlsplit
 
 
 class InvalidRequest(ValueError):
@@ -22,6 +23,8 @@ class SearchRequest:
     budget: int | float | None
     currency: str = "CAD"
     rooms: int = 1
+
+    callback_url: str | None = None
 
     @classmethod
     def parse(cls, data: object) -> "SearchRequest":
@@ -59,10 +62,21 @@ class SearchRequest:
             or (isinstance(budget, float) and not isfinite(budget))
         ):
             fail("budget", "Expected a positive total-stay budget, or omit it.")
+        callback_url = data.get("callback_url")
+        if callback_url is not None:
+            try:
+                if not isinstance(callback_url, str):
+                    raise ValueError()
+                parsed = urlsplit(callback_url)
+                if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+                    raise ValueError()
+            except ValueError:
+                fail("callback_url", "Expected an HTTP or HTTPS callback URL.")
+
         if errors:
             raise InvalidRequest(errors)
         return cls(
             session_id=data["session_id"].strip(), destination=data["destination"].strip(),
             check_in=dates["check_in"], check_out=dates["check_out"],
-            adults=adults, budget=budget,
+            adults=adults, budget=budget, callback_url=callback_url,
         )
