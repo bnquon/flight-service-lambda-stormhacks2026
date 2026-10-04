@@ -787,3 +787,15 @@ until its receiver URL is configured.
 Verified recording run: `9c64e55f-da14-44fc-b58b-3bbef548c2e7` returned 9 results
 in 48.5 seconds. The uploaded MP4 is H.264, 1280×720, with
 no recording error. POST delivery remains untested while its URL is blank.
+
+
+## Google-only deployment checkpoint — October 4, 2026
+
+`flight-search-service` in `us-west-2` now runs the Google-only code from commit
+`1e47246`, with a maximum of 15 offers across origins. Trip.com is removed from
+both the runtime and Docker build context. Image digest:
+`sha256:6f1778b8b2a0f9f6cad42f000d6432d96507117979372fda4e435012d3d02911`.
+AWS completed activation successfully. No live search was run for this update;
+15 is a cap, not a promise that every route has 15 valid offers. Existing function
+URL, environment variables, live progress callbacks and recording delivery remain
+in place. The hotel Lambda was not redeployed by this flight-only change.
