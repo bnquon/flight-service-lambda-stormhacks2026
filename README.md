@@ -7,7 +7,7 @@ The root workspace is `travel-search-services/`; both services live one level be
 
 | Directory | Purpose |
 | --- | --- |
-| [flight-service/](flight-service/README.md) | Google Flights + Trip.com search, separate Skyvern recordings, Mongo persistence, and local live-browser HTML POC. |
+| [flight-service/](flight-service/README.md) | Google Flights (up to 15 offers) search, separate Skyvern recordings, Mongo persistence, and local live-browser HTML POC. |
 | [hotel-service/](hotel-service/README.md) | Booking.com search with its own Skyvern key, Mongo collection, Lambda image, and local live-browser HTML POC. |
 
 Run each service’s commands from its own directory. The existing `.venv/` and
@@ -157,7 +157,7 @@ travel-search-services/         # parent workspace
 
 | | Flights | Hotels |
 | --- | --- | --- |
-| Website | Google Flights + Trip.com | Booking.com + Airbnb |
+| Website | Google Flights (up to 15 offers) | Booking.com + Airbnb |
 | Input | Origins, destination airport, travel dates, trip type, currency, optional budget | Destination, check-in/out, adults, one room, CAD, optional stay budget |
 | Output list | `flights` | `hotels` |
 | Browser | Skyvern Cloud, controlled/extracted with Playwright | Same approach, separate key |
@@ -576,7 +576,7 @@ to enable these logs in the hosted Lambdas.
 
 ## Deployed live previews
 
-Both flight sources (Google Flights and Trip.com) and both accommodation sources
+Google Flights and both accommodation sources
 (Booking.com and Airbnb) emit browser previews. Local WebSocket bridges still use
 their existing listener. For HTTP Lambda invocations, the orchestrator supplies a
 per-search `progress_callback_url` pointing to
@@ -589,6 +589,16 @@ The progress sender runs off the browser event loop, bounds its queue to 32 even
 and forwards at most two frames per second per browser over HTTP. Delivery failures
 are best effort and never fail extraction. Frame and stream events include `website`,
 `origin`, and `browser_session_id`; consumers must key previews by website plus
-origin to keep Google and Trip.com separate. No additional Lambda environment
+origin to preserve distinct source sessions and departure airports. No additional Lambda environment
 variables or dependencies are required. Recording processing still precedes final
 result delivery and is independent of the preview transport.
+
+
+## Google-only flight deployment
+
+The flight Lambda searches Google Flights only and returns up to 15 eligible
+flight offers total, cheapest first across requested origins. Trip.com is no
+longer launched or included in the flight container. Google expands additional
+fare cards when the observed "View more flights" control is available. The flight
+request, normalized response, live callback and recordings contract are unchanged.
+Hotel search remains Booking.com plus Airbnb, capped at eight offers per source.

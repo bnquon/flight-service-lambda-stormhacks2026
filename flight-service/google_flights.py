@@ -1,8 +1,11 @@
 """Google Flights automation using Skyvern's cloud browser."""
 
+from contextlib import suppress
 from datetime import datetime
 from math import isfinite
 import re
+
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from google_flights_navigation import navigate
 from request import SearchRequest
@@ -10,6 +13,7 @@ from search_logging import log_event, log_step
 
 
 WEBSITE = "google_flights"
+RESULT_LIMIT = 15
 
 TEXT_FIELDS = (
     "airline", "outbound_departure_time_text", "outbound_arrival_time_text",
@@ -171,6 +175,16 @@ async def extract_flights(page, request: SearchRequest, origin: str) -> list[dic
     log_event("extraction.wait_cards", "started")
     await cards.first.wait_for()
     log_event("extraction.wait_cards", "completed")
+    # Google may initially show fewer than fifteen fares behind an expander.
+    initial_count = await cards.count()
+    if initial_count < RESULT_LIMIT:
+        more_name = re.compile(r"^(?:View|Show) more flights$", re.I)
+        more = page.get_by_role("button", name=more_name).or_(page.get_by_role("link", name=more_name))
+        if await more.first.is_visible():
+            # Expansion is best effort: keep existing valid fares if loading stalls.
+            with suppress(PlaywrightTimeoutError):
+                await more.first.click(timeout=5000)
+                await cards.nth(initial_count).wait_for(timeout=10000)
     body = await page.get_by_role("main").inner_text()
     if "for 1 adult" not in body:
         raise ValueError("Could not confirm adult fare basis.")

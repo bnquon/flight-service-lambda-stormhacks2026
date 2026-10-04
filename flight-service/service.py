@@ -1,4 +1,4 @@
-"""Search Google Flights and Trip.com concurrently, preserving each recording."""
+"""Search Google Flights, returning up to fifteen offers with recorded previews."""
 
 import asyncio
 from contextlib import nullcontext
@@ -9,15 +9,14 @@ from time import monotonic
 from uuid import uuid4
 
 import google_flights
-import trip_com
 from delivery import archive_recording, post_results
 from live_browser import stream_browser
 from request import SearchRequest
 from updates import forward_callback_updates, publish_update
 from search_logging import log_context, log_event, log_step
 
-RESULTS_PER_SOURCE = 8
-ADAPTERS = (google_flights, trip_com)
+RESULTS_PER_SOURCE = google_flights.RESULT_LIMIT
+ADAPTERS = (google_flights,)
 
 
 def run_search(request: SearchRequest) -> dict | None:
@@ -41,7 +40,7 @@ def run_search(request: SearchRequest) -> dict | None:
 
 
 async def search_with_clients(client_type, api_key: str, request: SearchRequest) -> dict:
-    # Separate clients avoid a race in the SDK's lazy Playwright initialization.
+    # One client serves the sequential Google Flights origin searches.
     clients = [client_type(api_key=api_key, timeout=180) for _ in ADAPTERS]
 
     async def close_client(client):
@@ -51,7 +50,7 @@ async def search_with_clients(client_type, api_key: str, request: SearchRequest)
             logging.exception("Skyvern client cleanup failed")
 
     try:
-        return await search_origins(clients[0], request, trip_com_skyvern=clients[1])
+        return await search_origins(clients[0], request)
     finally:
         await asyncio.gather(*(close_client(client) for client in clients))
 
@@ -67,10 +66,10 @@ def source_record(request: SearchRequest, search_id: str, origin: str, adapter) 
     }
 
 
-async def search_origins(skyvern, request: SearchRequest, *, trip_com_skyvern=None) -> dict:
+async def search_origins(skyvern, request: SearchRequest) -> dict:
     search_id = str(uuid4())
     started = monotonic()
-    clients = (skyvern, trip_com_skyvern if trip_com_skyvern is not None else skyvern)
+    clients = (skyvern,)
     with log_context(session_id=request.session_id, search_id=search_id):
         created_at = datetime.now(timezone.utc).isoformat()
         record = {
@@ -86,7 +85,7 @@ async def search_origins(skyvern, request: SearchRequest, *, trip_com_skyvern=No
             "created_at": created_at, "updated_at": created_at,
         }
         publish_update(request.session_id, search_id, "search.status", status="searching")
-        # Origins remain sequential, with two independent source browsers per origin.
+        # Each origin has one recorded Google Flights browser.
         deadline = started + 420
         for origin in request.origins:
             sources = [source_record(request, search_id, origin, adapter) for adapter in ADAPTERS]
@@ -120,7 +119,7 @@ async def search_origins(skyvern, request: SearchRequest, *, trip_com_skyvern=No
                             else "partially_complete" if successful else "failed")
         if not successful:
             record["error"] = {"code": "SEARCH_FAILED", "message": "All flight source searches failed."}
-        # Eight per website across all origins, preserving the caller's existing list contract.
+        # Up to fifteen cheapest eligible offers across all origins.
         for adapter in ADAPTERS:
             pool = [flight for source in record["origins"] if source["website"] == adapter.WEBSITE
                     for flight in source["flights"]]
@@ -131,7 +130,7 @@ async def search_origins(skyvern, request: SearchRequest, *, trip_com_skyvern=No
         async def archive_source(source):
             if not source["skyvern_browser_session_id"]:
                 return
-            client = clients[0] if source["website"] == google_flights.WEBSITE else clients[1]
+            client = skyvern
             archive_started = monotonic()
             await archive_recording(client, source, [source], f"flights/{source['website']}/{source['origin']}")
             source["timings_seconds"]["recording.archive"] = round(monotonic()-archive_started, 3)
@@ -180,10 +179,7 @@ async def search_origin(skyvern, request: SearchRequest, search_id: str, record:
                         publish_update(request.session_id, search_id, "search.status", origin=origin,
                                        website=adapter.WEBSITE, status="extracting")
                     phase_started = monotonic()
-                    if adapter is trip_com:
-                        flights = await adapter.extract_flights(working_page, request, origin, metadata=record)
-                    else:
-                        flights = await adapter.extract_flights(working_page, request, origin)
+                    flights = await adapter.extract_flights(working_page, request, origin)
                     record["timings_seconds"]["website.extract"] = round(monotonic()-phase_started, 3)
                     return flights
         finally:

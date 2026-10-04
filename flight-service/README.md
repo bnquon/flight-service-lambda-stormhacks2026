@@ -10,64 +10,44 @@ The existing credentials stay at the workspace root. To keep using them, replace
 `source .env` below with `source ../.env`. Alternatively, copy the root `.env`
 into this directory yourself. Python does not load either file automatically.
 
-Python request validation and Google Flights + Trip.com search through Skyvern Cloud.
+Python request validation and Google Flights search through Skyvern Cloud.
 Use Python 3.12 or 3.13 for deployment. Skyvern provides the remote browser;
 Playwright reads Google Flights directly, and PyMongo stores results.
 Both direct dependencies are pinned in `requirements.txt`.
 Version 1.0.55 requires its `local` extra for the browser/page API even when the
 browser runs in Skyvern Cloud. This installs substantial transitive dependencies.
 
-### Multiple flight sources
+### Google Flights only
 
-- Google Flights and Trip.com use independent Skyvern clients/browsers in parallel
-  for each origin. Multiple origins are processed sequentially within the shared
-  search deadline.
-- The combined `flights` list contains at most **8 Google Flights + 8 Trip.com**
-  offers across all origins, cheapest first after the optional budget filter.
-  Each fare preserves `website` and `source`; required flight fields are unchanged.
-- `origins` contains one entry per airport/source pair, with source status,
-  capped origin fares, browser IDs, timings, and separate recording links/errors.
-  Recordings are archived under `flights/<website>/<origin>/<search_id>`.
-  Legacy top-level replay fields still point to one available primary recording.
-- Google Flights and Trip.com both emit source-tagged live preview frames. Both source recordings are
-  available as dashboard replay tabs after the final response.
-- Source failures preserve the other source's fares (`partially_complete`).
-- Trip.com reads up to eight displayed outbound fares. For round trips it selects
-  each outbound and pairs it with its cheapest validated displayed return, using
-  the return card's total round-trip price. It preserves both leg times, durations
-  and stops. These are capped visible candidates, not an exhaustive fare ranking.
-- The Trip.com adapter allows 120 seconds for extraction and return selection.
-  Validated pairs survive an interrupted or incomplete search, with
-  `results_complete: false`, partial status and a warning. Browser access denial
-  ends that source; it never solves challenges or starts a booking.
-- Trip.com supports the two observed card layouts and checks full dates, explicit
-  airport filters, one adult/economy, currency and fare basis. Unknown cards are
-  skipped; settings mismatches fail the source. A selected return is never inferred
-  from outbound-only cards. No reusable booking deep link has been established,
-  so Trip.com does not populate the optional `booking_url` field.
-- The browser probe exercised YVR/NRT round trips in CAD, including a single
-  outbound selection and its return list. Full eight-pair extraction, other routes,
-  one-way searches, other currencies and Lambda deployment need verification.
-  The existing Google source remains available if Trip.com cannot validate a search.
-
-See [Trip.com probe notes](tests/TRIP_PROBE.md) for selectors and observed timings.
-The old [KAYAK probe notes](tests/KAYAK_PROBE.md) are historical evidence only;
-KAYAK is no longer an active adapter.
+- Google Flights is the only active flight source, with one recorded Skyvern
+  browser per origin. Multiple origins remain sequential within the shared deadline.
+- The final `flights` list contains at most **15 Google Flights offers total across
+  all origins**, cheapest first after the optional budget filter. Fewer offers are
+  returned if fewer valid matching fares are available.
+- If Google initially displays fewer than fifteen cards, Playwright expands
+  "View more flights" / "Show more flights" when available, with bounded waits.
+- Each offer retains `website` and `source`; the existing request and response
+  contract, `origins`, live previews and recording metadata are preserved.
+  Recording uploads still finish before the final response.
+- Round-trip prices are Google's displayed per-person round-trip fare estimates;
+  Google provides outbound details, not a verified selected return itinerary.
+- Trip.com is removed from the adapter, probes and Lambda image. Historical saved
+  results retain their original provider. The old KAYAK probe notes are historical.
 
 See [Contract examples](#contract-examples) for the request, final JSON, errors,
 and progress messages an orchestrator can expect.
 
 ## Status and remaining work
 
-Google Flights and Trip.com searches, request validation, per-source failure handling, recording
-metadata, and Mongo persistence are implemented. The prior Google-only searches were verified
-locally and in Lambda; Google one-way/USD also passed locally. The combined source
-implementation has not been verified or deployed yet. The retained HTML POC
-receives live browser frames through the local WebSocket bridge, confirmed by the
-user. Capture compatibility with saved recordings still needs a focused check.
+Google Flights search, request validation, origin failure handling, live previews,
+recording metadata and Mongo persistence are implemented. The previous Google
+searches were verified locally and in Lambda. This update increases the cap to
+fifteen; actual availability and the expansion control vary by search.
 
-The deployed Lambda has no public WebSocket endpoint. Production integration needs
-an authenticated transport, asynchronous job execution, and result/reconnect recovery.
+The deployed Lambda has no public WebSocket endpoint. It sends live progress to
+the orchestrator through the request-scoped `progress_callback_url`; the backend
+forwards these events to the dashboard socket. Configure a publicly reachable
+`ORCHESTRATOR_PUBLIC_URL` on the backend to enable deployed previews.
 Recording metadata refresh and retention are unresolved; broader routes, multiple
 origins, consent dialogs, and explicit no-results pages need live coverage.
 No-result `suggestion` remains `null`.
@@ -97,8 +77,7 @@ For a Next.js client, see [the shared integration guide](../docs/nextjs-integrat
 - Extra fields are ignored. Session IDs must be non-empty strings.
 - One session can have multiple searches; each execution gets a distinct `search_id`.
 - Initial scope: one adult in economy. Extract currently displayed cards,
-  with per-person round-trip prices for round trips. Trip.com includes return-leg
-  details; Google Flights retains the existing outbound-only detail format.
+  with per-person round-trip prices for round trips and outbound details.
 
 ## Contract examples
 
@@ -381,7 +360,7 @@ extracted fares exceed the budget. Visible cards are not an exhaustive search.
 Website modules expose `navigate(raw_playwright_page, request, origin)` and
 `extract_flights(skyvern_page, request, origin)`, which returns validated flights.
 A second website can implement those two functions without duplicating browser
-management. Both websites emit live previews; per-source origin records and
+management. Google Flights emits live previews; per-source origin records and
 flights include `website: google_flights` for source identification.
 Navigation confirms calendar dates and currency; extraction validates the actual
 page settings. Google's internal URL encoding is deliberately not parsed.

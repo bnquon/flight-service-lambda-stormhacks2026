@@ -8,7 +8,6 @@
 !service.py
 !live_browser.py
 !google_flights.py
-!trip_com.py
 !google_flights_navigation.py
 !updates.py
 !storage.py
