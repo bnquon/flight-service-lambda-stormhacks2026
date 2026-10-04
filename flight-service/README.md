@@ -642,14 +642,18 @@ Fresh environments can install the bridge dependency with:
 ../.venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
-From `flight-service/`, **terminal 1** loads your server-side `.env` and starts the bridge:
+From `flight-service/`, **terminal 1** loads the workspace root's flight `.env`
+and starts the bridge:
 
 ```bash
 set -a
-source .env
+source ../.env
 set +a
 ../.venv/bin/python websocket_test_server.py
 ```
+
+If you keep flight credentials in `flight-service/.env` instead, use `source .env`.
+To run the hotel bridge alongside flights, see [the shared startup instructions](../README.md#run-both-services-locally).
 
 **Terminal 2** serves only the public frontend files:
 

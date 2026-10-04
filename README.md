@@ -36,6 +36,86 @@ both WebSocket servers after replacing `.venv`.
 See the [flight README](flight-service/README.md) for the existing contract,
 local commands and deployment notes. See the [Next.js integration guide](docs/nextjs-integration.md) for the shared WebSocket contract and a client component example.
 
+## Run both services locally
+
+Use the shared `.venv` from the setup above and run each WebSocket bridge in a
+separate terminal. Both can run together: flights use port **8765** and hotels
+use port **8766**. The Python handlers run locally and use Skyvern Cloud browsers
+for searches.
+
+The commands below start from the `travel-search-services/` repository root.
+Keep existing credential files. For a fresh checkout without them, create the
+flight environment at the root and a separate hotel environment:
+
+```bash
+cp flight-service/.env.example .env
+cp hotel-service/.env.example hotel-service/.env
+```
+
+Fill in `SKYVERN_API_KEY` in each file, using the separate hotel key in
+`hotel-service/.env`. Set the Mongo values if you want searches saved;
+the hotel environment uses `MONGODB_DATABASE=hotel_searches` and
+`MONGODB_SEARCH_COLLECTION=searches`. The bridge scripts read exported environment
+variables, so load the appropriate file before starting each process.
+
+**Terminal 1 — flights:**
+
+```bash
+cd flight-service
+set -a
+source ../.env
+set +a
+../.venv/bin/python websocket_test_server.py
+```
+
+Flight endpoint: `ws://127.0.0.1:8765`.
+
+**Terminal 2 — hotels:**
+
+```bash
+cd hotel-service
+set -a
+source .env
+set +a
+WS_PORT=8766 ../.venv/bin/python websocket_test_server.py
+```
+
+Hotel endpoint: `ws://127.0.0.1:8766`. Port 8766 is also the hotel's default;
+`WS_PORT` lets you override it.
+
+Leave both terminals running. Restart the affected bridge after changing its
+code or environment, and use `Ctrl+C` to stop it. If recording uploads are enabled,
+the local environment also needs `boto3` and AWS credentials with upload access;
+see [recording storage](#recording-storage-and-result-delivery).
+
+### Connect the Fare orchestrator and dashboard
+
+Set these values in `fare-orchestrator-service/.env`:
+
+```dotenv
+MOCK_LLM=false
+MOCK_TRAVEL=false
+DASHBOARD_URL=http://localhost:3000
+FLIGHT_SERVICE_WS_URL=ws://127.0.0.1:8765
+HOTEL_SERVICE_WS_URL=ws://127.0.0.1:8766
+SEARCH_FRONTEND_ORIGIN=http://localhost:3000
+```
+
+Run the orchestrator with `go run .` from its repository root. Restart it after
+changing its environment. The configured WebSocket URLs select the local search
+bridges; leaving them empty selects the Lambda HTTP URLs instead.
+
+In `fare-frontend/web/.env.local`, configure:
+
+```dotenv
+NEXT_PUBLIC_ORCHESTRATOR_URL=http://localhost:8000
+NEXT_PUBLIC_ORCHESTRATOR_WS_URL=ws://localhost:8000
+```
+
+Run `npm run dev` from `fare-frontend/web/` and open `http://localhost:3000`.
+The dashboard receives search progress and browser frames through the
+orchestrator. Keep Skyvern, Mongo, and AWS credentials in the service environments.
+
 ## Folder structure
 
 The two service directories are siblings inside the parent workspace:
@@ -327,7 +407,10 @@ is an optional Skyvern dashboard link. Frames use airport codes for flight
 
 Follow the [flight setup](flight-service/README.md#simple-frontend--websocket-test)
 or [hotel setup](hotel-service/README.md#websocket-updates-and-live-viewing).
-Both use bridge port 8765 and frontend port 8080, so run one service at a time.
+The bridges use ports 8765 (flight) and 8766 (hotel), as shown in
+[the simultaneous startup instructions](#run-both-services-locally). Both standalone
+HTML POCs use frontend port 8080, so serve one POC at a time. In the hotel POC,
+set the WebSocket URL field to `ws://127.0.0.1:8766` before connecting.
 Run Python with `../.venv/bin/python` from each service directory. Load flight
 secrets from its `.env` or the parent `.env`; load hotel secrets from its own `.env`.
 

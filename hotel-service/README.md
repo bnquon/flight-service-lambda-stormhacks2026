@@ -186,7 +186,7 @@ From `hotel-service/`, **terminal 1**:
 set -a
 source .env
 set +a
-../.venv/bin/python websocket_test_server.py
+WS_PORT=8766 ../.venv/bin/python websocket_test_server.py
 ```
 
 If bridge dependencies are missing, install them from `requirements-dev.txt`.
@@ -196,9 +196,12 @@ In **terminal 2**, also from `hotel-service/`:
 python3 -m http.server 8080 --bind 127.0.0.1 --directory frontend
 ```
 
-Open **http://127.0.0.1:8080**, connect, and start a search. This uses paid Skyvern
-resources and saves to Mongo when configured. Both service bridges use port 8765
-and frontend port 8080; run one service at a time.
+Open **http://127.0.0.1:8080**, set the WebSocket URL field to
+`ws://127.0.0.1:8766`, connect, and start a search. This uses paid Skyvern
+resources and saves to Mongo when configured. The hotel bridge defaults to port
+8766 and accepts a `WS_PORT` override; the flight bridge uses port 8765, so both
+bridges can run together. The standalone HTML POCs both use frontend port 8080;
+serve one POC at a time. See [running both services with Fare](../README.md#run-both-services-locally).
 
 The page shows progress, the live browser image, hotel results, and final JSON.
 The bridge accepts `http://localhost:8080` and `http://127.0.0.1:8080`, plus
@@ -206,7 +209,7 @@ the same hosts on port 3000 for Next.js.
 Secrets stay in Python, never in frontend files.
 
 Send `{"action":"search","request":{...hotel inputs...}}` to
-`ws://127.0.0.1:8765`. Events have `version: 1`, `type`, `session_id`, `search_id`,
+`ws://127.0.0.1:8766`. Events have `version: 1`, `type`, `session_id`, `search_id`,
 and `timestamp`, plus:
 
 | Type | Payload |
