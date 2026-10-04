@@ -10,21 +10,50 @@ The existing credentials stay at the workspace root. To keep using them, replace
 `source .env` below with `source ../.env`. Alternatively, copy the root `.env`
 into this directory yourself. Python does not load either file automatically.
 
-Python request validation and Google Flights search through Skyvern Cloud.
+Python request validation and Google Flights + KAYAK search through Skyvern Cloud.
 Use Python 3.12 or 3.13 for deployment. Skyvern provides the remote browser;
 Playwright reads Google Flights directly, and PyMongo stores results.
 Both direct dependencies are pinned in `requirements.txt`.
 Version 1.0.55 requires its `local` extra for the browser/page API even when the
 browser runs in Skyvern Cloud. This installs substantial transitive dependencies.
 
+### Multiple flight sources
+
+- Google Flights and KAYAK use independent Skyvern clients/browsers in parallel
+  for each origin. Multiple origins are processed sequentially within the shared
+  search deadline.
+- The combined `flights` list contains at most **8 Google Flights + 8 KAYAK**
+  offers across all origins, cheapest first after the optional budget filter.
+  Each fare preserves `website` and `source`; required flight fields are unchanged.
+- `origins` contains one entry per airport/source pair, with source status,
+  capped origin fares, browser IDs, timings, and separate recording links/errors.
+  Recordings are archived under `flights/<website>/<origin>/<search_id>`.
+  Legacy top-level replay fields still point to one available primary recording.
+- Only Google Flights emits live preview frames. Both source recordings are
+  available as dashboard replay tabs after the final response.
+- Source failures preserve the other source's fares (`partially_complete`).
+  KAYAK's loading banner can regress; eight-second-stable eligible cards may be
+  returned after a bounded settling period while it still reports loading. Those
+  source rows explicitly have `results_complete: false`, partial status and a warning.
+- KAYAK also preserves return-leg details and its booking link. Return-leg
+  identity is incomplete on legacy Google rows, so cross-site deduplication is
+  deferred to avoid merging different round trips.
+- The inspected KAYAK flow has only been exercised live on the documented
+  YVR/NRT round trip in CAD. Additional routes, one-way searches, supported currency
+  formats, layout changes and loading behavior need coverage before relying on them.
+  Unmatched settings/cards fail that source instead of inventing flight values.
+
+See [KAYAK DOM probe notes](tests/KAYAK_PROBE.md) for selectors and observed timings.
+
 See [Contract examples](#contract-examples) for the request, final JSON, errors,
 and progress messages an orchestrator can expect.
 
 ## Status and remaining work
 
-Google Flights searches, request validation, per-origin failure handling, recording
-metadata, and Mongo persistence are implemented. Searches have been verified
-locally and in Lambda; one-way/USD has also passed locally. The retained HTML POC
+Google Flights and KAYAK searches, request validation, per-source failure handling, recording
+metadata, and Mongo persistence are implemented. The prior Google-only searches were verified
+locally and in Lambda; Google one-way/USD also passed locally. The combined source
+implementation has not been verified or deployed yet. The retained HTML POC
 receives live browser frames through the local WebSocket bridge, confirmed by the
 user. Capture compatibility with saved recordings still needs a focused check.
 
@@ -58,8 +87,9 @@ For a Next.js client, see [the shared integration guide](../docs/nextjs-integrat
   currency availability must be checked by the provider in a later step.
 - Extra fields are ignored. Session IDs must be non-empty strings.
 - One session can have multiple searches; each execution gets a distinct `search_id`.
-- Initial scope: one adult in economy. Extract currently displayed outbound cards,
-  with total round-trip prices for round trips. Return-leg details are not extracted.
+- Initial scope: one adult in economy. Extract currently displayed cards,
+  with per-person round-trip prices for round trips. KAYAK includes return-leg
+  details; Google Flights retains the existing outbound-only detail format.
 
 ## Contract examples
 
