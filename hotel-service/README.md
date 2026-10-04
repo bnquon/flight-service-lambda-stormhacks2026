@@ -153,6 +153,7 @@ Each hotel is deliberately small. Example based on an inspected Tokyo card
 {
   "name": "remm Roppongi",
   "url": "https://www.booking.com/hotel/jp/remm-roppongi.html?checkin=2027-04-10&checkout=2027-04-20&group_adults=2&group_children=0&no_rooms=1&selected_currency=CAD",
+  "booking_url": "https://www.booking.com/hotel/jp/remm-roppongi.html?checkin=2027-04-10&checkout=2027-04-20&group_adults=2&group_children=0&no_rooms=1&selected_currency=CAD",
   "total_price": 1942.0,
   "currency": "CAD",
   "rating": 8.6,
@@ -160,6 +161,16 @@ Each hotel is deliberately small. Example based on an inspected Tokyo card
   "price_note": "Additional charges may apply"
 }
 ```
+
+Every hotel includes `booking_url`, with the existing `url` retained as an
+identical compatibility alias. This is the property's Booking.com or Airbnb
+listing, preserving the requested dates, adult count, and CAD currency while
+removing tracking/session parameters. Both per-source and aggregate results,
+Mongo records, and result callbacks retain these fields. Consumers should keep
+the selected offer's URL rather than asking Gemini to recreate it. Opening a
+link does not reserve the stay, guarantee the displayed price, or select a
+specific room/rate; availability and checkout pricing are checked on the site.
+No booking automation is performed.
 
 `rating` is a guest score on a /10 display scale, not a star rating.
 Hotel rows also include `source`, `property_type`, `original_rating`, and

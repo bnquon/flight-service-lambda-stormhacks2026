@@ -1,9 +1,11 @@
 """Google Flights automation using Skyvern's cloud browser."""
 
+import asyncio
 from contextlib import suppress
 from datetime import datetime
 from math import isfinite
 import re
+from urllib.parse import parse_qs, urlsplit
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
@@ -14,6 +16,7 @@ from search_logging import log_event, log_step
 
 WEBSITE = "google_flights"
 RESULT_LIMIT = 15
+LINK_CAPTURE_SECONDS = 35
 
 TEXT_FIELDS = (
     "airline", "outbound_departure_time_text", "outbound_arrival_time_text",
@@ -57,11 +60,67 @@ def validate_extraction(data: object, request: SearchRequest, origin: str) -> li
             or flight["currency"] != request.currency
         ):
             raise ValueError("Invalid price, stops, or currency.")
+        link_fields = {}
+        if "booking_url" in flight:
+            url = flight["booking_url"]
+            link_type = flight.get("link_type")
+            if not valid_flight_url(url) or link_type not in ("flight_selection", "search"):
+                raise ValueError("Invalid Google Flights link.")
+            if link_type == "flight_selection" and not parse_qs(urlsplit(url).query).get("tfu"):
+                raise ValueError("Google Flights selection link has no selected flight.")
+            link_fields = {"booking_url": url, "link_type": link_type}
         validated.append({
             **{field: flight[field] for field in FLIGHT_FIELDS},
+            **link_fields,
             "origin": origin, "destination": request.destination, "website": WEBSITE,
         })
     return validated
+
+
+def valid_flight_url(url: object) -> bool:
+    if not isinstance(url, str):
+        return False
+    try:
+        link = urlsplit(url)
+        return (
+            link.scheme == "https" and link.netloc == "www.google.com"
+            and link.path == "/travel/flights/search" and bool(parse_qs(link.query).get("tfs"))
+        )
+    except ValueError:
+        return False
+
+
+async def capture_flight_links(page, offers: list[tuple[dict, str]], search_url: str) -> None:
+    """Keep fares even if a selected-outbound link cannot be captured quickly."""
+    if not valid_flight_url(search_url):
+        raise ValueError("Google Flights search has no usable link.")
+    for flight, _ in offers:
+        flight.update(booking_url=search_url, link_type="search")
+    try:
+        async with asyncio.timeout(LINK_CAPTURE_SECONDS):
+            for flight, label in offers:
+                try:
+                    async with asyncio.timeout(3):
+                        # The accessible link is overlaid by the card; Enter activates its handler.
+                        await page.get_by_role("link", name=label, exact=True).first.press("Enter", timeout=2000)
+                        await page.wait_for_url(lambda url: str(url) != search_url, timeout=2000)
+                        selected_url = page.url
+                        if valid_flight_url(selected_url) and parse_qs(urlsplit(selected_url).query).get("tfu"):
+                            flight.update(booking_url=selected_url, link_type="flight_selection")
+                except Exception:
+                    # Link capture is optional and cannot discard an already validated fare.
+                    # Stop so a delayed navigation cannot be attributed to the next offer.
+                    break
+                if page.url != search_url:
+                    try:
+                        async with asyncio.timeout(3):
+                            await page.go_back(wait_until="domcontentloaded", timeout=2500)
+                            if page.url != search_url:
+                                break
+                    except Exception:
+                        break
+    except TimeoutError:
+        pass
 
 
 def _fold_currency(value: str) -> str:
@@ -206,13 +265,20 @@ async def extract_flights(page, request: SearchRequest, origin: str) -> list[dic
     })""")
     log_event("extraction.cards", "completed", card_count=len(raw_cards))
     with log_step("extraction.parse_validate"):
-        flights = []
+        offers = []
         last_error = None
         for card in raw_cards:
             try:
-                flights.append(parse_card(card, request.currency, currency_name, request.trip_type))
+                flight = parse_card(card, request.currency, currency_name, request.trip_type)
+                offers.append((flight, card["label"]))
             except ValueError as exc:
                 last_error = exc
-        if not flights:
+        if not offers:
             raise last_error or ValueError("No parseable Google Flights fare cards.")
+        offers.sort(key=lambda offer: offer[0]["price"])
+        offers = offers[:RESULT_LIMIT]
+        flights = [flight for flight, _ in offers]
+        # Verify request settings and fare data before capturing links from the current search.
+        validate_extraction({"outcome": "results", "search": search, "flights": flights}, request, origin)
+        await capture_flight_links(page, offers, page.url)
         return validate_extraction({"outcome": "results", "search": search, "flights": flights}, request, origin)

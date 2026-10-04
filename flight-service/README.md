@@ -204,7 +204,17 @@ Example parsed `200` body with one flight:
   or the one-way fare for one-way searches. No currency conversion is performed.
 - Times and duration remain Google display text, not timestamps. `+1`/`+2` arrival
   markers mean the following calendar day/two days later. Only outbound details
-  are extracted; return-leg details, flight numbers, and booking links are not provided.
+  are extracted; return-leg details and flight numbers are not provided.
+- Every flight includes `booking_url` and `link_type`. The browser activates each
+  of the fifteen cheapest parsed outbound cards and captures Google's actual
+  selected-flight URL (`link_type: flight_selection`). This is an outbound
+  selection in Google Flights, not an airline checkout link or a selected return
+  flight. Round trips still require choosing a return flight on Google.
+  Capture is best effort, limited to 35 seconds total with short per-card timeouts.
+  Uncaptured offers retain the verified search URL (`link_type: search`); that
+  fallback opens the requested route/dates but does not select a specific fare.
+  Consumers should retain the returned URL and its type rather than generate
+  links with Gemini. Prices/availability can change; no booking is performed.
 - `live_view_url` comes from Skyvern and can be `null`; it is not a recording URL.
 - `recordings` retains all returned segments; filenames can be `null`.
   `replay_url` is the first segment's URL, or `null` when unavailable. Recording

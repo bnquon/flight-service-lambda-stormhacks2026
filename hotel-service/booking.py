@@ -76,7 +76,7 @@ def parse_card(raw: dict, request: SearchRequest) -> dict | None:
     }), ""))
     review = re.search(r"Scored ([\d.]+),.*?([\d,]+) reviews?", raw["review"])
     return {
-        "name": raw["name"], "url": url,
+        "name": raw["name"], "url": url, "booking_url": url,
         "total_price": float(match.group(1).replace(",", "")), "currency": "CAD",
         "rating": float(review.group(1)) if review else None,
         "review_count": int(review.group(2).replace(",", "")) if review else None,

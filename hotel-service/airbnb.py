@@ -93,12 +93,12 @@ def parse_card(raw: dict, request: SearchRequest) -> dict | None:
     original_rating = float(review.group(1)) if review else None
     if original_rating is not None and not 0 <= original_rating <= 5:
         raise ValueError("Invalid Airbnb rating.")
+    url = urlunsplit(("https", "www.airbnb.ca", link.path, urlencode({
+        "check_in": request.check_in.isoformat(), "check_out": request.check_out.isoformat(),
+        "adults": request.adults, "currency": "CAD",
+    }), ""))
     return {
-        "name": raw["name"],
-        "url": urlunsplit(("https", "www.airbnb.ca", link.path, urlencode({
-            "check_in": request.check_in.isoformat(), "check_out": request.check_out.isoformat(),
-            "adults": request.adults, "currency": "CAD",
-        }), "")),
+        "name": raw["name"], "url": url, "booking_url": url,
         "total_price": total, "currency": "CAD",
         # Existing dashboard renders /10. This is a scale conversion, not equivalent review systems.
         "rating": round(original_rating * 2, 2) if original_rating is not None else None,
