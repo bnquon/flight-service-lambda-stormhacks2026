@@ -13,7 +13,7 @@ import booking
 from delivery import archive_recording, post_results
 from live_browser import stream_browser
 from request import SearchRequest
-from updates import publish_update
+from updates import forward_callback_updates, publish_update
 from search_logging import log_context, log_event, log_step
 
 
@@ -25,7 +25,8 @@ def run_search(request: SearchRequest) -> dict | None:
             return None
         from skyvern import Skyvern
         import skyvern.library.skyvern_browser
-        result = asyncio.run(search_with_clients(Skyvern, api_key, request))
+        with forward_callback_updates(request.progress_callback_url):
+            result = asyncio.run(search_with_clients(Skyvern, api_key, request))
         from storage import save_search
         save_search(result)
         if not post_results(result, "HOTEL_RESULTS_POST_URL", request.callback_url):
@@ -68,7 +69,7 @@ def timed_phase(origin: dict, phase: str):
 
 
 async def search_origin(skyvern, request: SearchRequest, search_id: str, adapter,
-                        *, preview: bool = False) -> dict:
+                        *, preview: bool = True) -> dict:
     origin = {
         "session_id": request.session_id, "search_id": search_id,
         "website": adapter.WEBSITE, "status": "searching", "hotels": [], "error": None,
@@ -92,9 +93,8 @@ async def search_origin(skyvern, request: SearchRequest, search_id: str, adapter
                 with timed_phase(origin, "browser.working_page"):
                     working_page = await browser.get_working_page()
                 page = working_page.page
-                # Only Booking emits frames: existing consumers have a single preview.
                 stream = stream_browser(page, request.session_id, search_id, adapter.WEBSITE,
-                                        browser.browser_session_id) if preview else nullcontext()
+                                        browser.browser_session_id, website=adapter.WEBSITE) if preview else nullcontext()
                 async with stream:
                     with timed_phase(origin, "website.navigate"):
                         if adapter is airbnb:
@@ -102,7 +102,8 @@ async def search_origin(skyvern, request: SearchRequest, search_id: str, adapter
                         else:
                             await adapter.navigate(page, request)
                     if preview:
-                        publish_update(request.session_id, search_id, "search.status", status="extracting")
+                        publish_update(request.session_id, search_id, "search.status", website=adapter.WEBSITE,
+                                       origin=adapter.WEBSITE, status="extracting")
                     with timed_phase(origin, "website.extract"):
                         hotels = await adapter.extract_hotels(page, request)
                         for hotel in hotels:
@@ -134,6 +135,9 @@ async def search_origin(skyvern, request: SearchRequest, search_id: str, adapter
                         origin["replay_url"] = origin["recordings"][0]["url"]
                 except Exception:
                     logging.exception("Skyvern recording lookup failed for %s", adapter.WEBSITE)
+        publish_update(request.session_id, search_id, "search.status",
+                       website=adapter.WEBSITE, origin=adapter.WEBSITE,
+                       status=origin["status"], error=origin["error"])
         with timed_phase(origin, "recording.archive"):
             await archive_recording(skyvern, origin, [origin], f"hotels/{adapter.WEBSITE}")
         origin["timings_seconds"]["total"] = round(monotonic() - started, 3)

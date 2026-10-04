@@ -10,7 +10,7 @@ The existing credentials stay at the workspace root. To keep using them, replace
 `source .env` below with `source ../.env`. Alternatively, copy the root `.env`
 into this directory yourself. Python does not load either file automatically.
 
-Python request validation and Google Flights + KAYAK search through Skyvern Cloud.
+Python request validation and Google Flights + Trip.com search through Skyvern Cloud.
 Use Python 3.12 or 3.13 for deployment. Skyvern provides the remote browser;
 Playwright reads Google Flights directly, and PyMongo stores results.
 Both direct dependencies are pinned in `requirements.txt`.
@@ -19,38 +19,47 @@ browser runs in Skyvern Cloud. This installs substantial transitive dependencies
 
 ### Multiple flight sources
 
-- Google Flights and KAYAK use independent Skyvern clients/browsers in parallel
+- Google Flights and Trip.com use independent Skyvern clients/browsers in parallel
   for each origin. Multiple origins are processed sequentially within the shared
   search deadline.
-- The combined `flights` list contains at most **8 Google Flights + 8 KAYAK**
+- The combined `flights` list contains at most **8 Google Flights + 8 Trip.com**
   offers across all origins, cheapest first after the optional budget filter.
   Each fare preserves `website` and `source`; required flight fields are unchanged.
 - `origins` contains one entry per airport/source pair, with source status,
   capped origin fares, browser IDs, timings, and separate recording links/errors.
   Recordings are archived under `flights/<website>/<origin>/<search_id>`.
   Legacy top-level replay fields still point to one available primary recording.
-- Only Google Flights emits live preview frames. Both source recordings are
+- Google Flights and Trip.com both emit source-tagged live preview frames. Both source recordings are
   available as dashboard replay tabs after the final response.
 - Source failures preserve the other source's fares (`partially_complete`).
-  KAYAK's loading banner can regress; eight-second-stable eligible cards may be
-  returned after a bounded settling period while it still reports loading. Those
-  source rows explicitly have `results_complete: false`, partial status and a warning.
-- KAYAK also preserves return-leg details and its booking link. Return-leg
-  identity is incomplete on legacy Google rows, so cross-site deduplication is
-  deferred to avoid merging different round trips.
-- The inspected KAYAK flow has only been exercised live on the documented
-  YVR/NRT round trip in CAD. Additional routes, one-way searches, supported currency
-  formats, layout changes and loading behavior need coverage before relying on them.
-  Unmatched settings/cards fail that source instead of inventing flight values.
+- Trip.com reads up to eight displayed outbound fares. For round trips it selects
+  each outbound and pairs it with its cheapest validated displayed return, using
+  the return card's total round-trip price. It preserves both leg times, durations
+  and stops. These are capped visible candidates, not an exhaustive fare ranking.
+- The Trip.com adapter allows 120 seconds for extraction and return selection.
+  Validated pairs survive an interrupted or incomplete search, with
+  `results_complete: false`, partial status and a warning. Browser access denial
+  ends that source; it never solves challenges or starts a booking.
+- Trip.com supports the two observed card layouts and checks full dates, explicit
+  airport filters, one adult/economy, currency and fare basis. Unknown cards are
+  skipped; settings mismatches fail the source. A selected return is never inferred
+  from outbound-only cards. No reusable booking deep link has been established,
+  so Trip.com does not populate the optional `booking_url` field.
+- The browser probe exercised YVR/NRT round trips in CAD, including a single
+  outbound selection and its return list. Full eight-pair extraction, other routes,
+  one-way searches, other currencies and Lambda deployment need verification.
+  The existing Google source remains available if Trip.com cannot validate a search.
 
-See [KAYAK DOM probe notes](tests/KAYAK_PROBE.md) for selectors and observed timings.
+See [Trip.com probe notes](tests/TRIP_PROBE.md) for selectors and observed timings.
+The old [KAYAK probe notes](tests/KAYAK_PROBE.md) are historical evidence only;
+KAYAK is no longer an active adapter.
 
 See [Contract examples](#contract-examples) for the request, final JSON, errors,
 and progress messages an orchestrator can expect.
 
 ## Status and remaining work
 
-Google Flights and KAYAK searches, request validation, per-source failure handling, recording
+Google Flights and Trip.com searches, request validation, per-source failure handling, recording
 metadata, and Mongo persistence are implemented. The prior Google-only searches were verified
 locally and in Lambda; Google one-way/USD also passed locally. The combined source
 implementation has not been verified or deployed yet. The retained HTML POC
@@ -88,7 +97,7 @@ For a Next.js client, see [the shared integration guide](../docs/nextjs-integrat
 - Extra fields are ignored. Session IDs must be non-empty strings.
 - One session can have multiple searches; each execution gets a distinct `search_id`.
 - Initial scope: one adult in economy. Extract currently displayed cards,
-  with per-person round-trip prices for round trips. KAYAK includes return-leg
+  with per-person round-trip prices for round trips. Trip.com includes return-leg
   details; Google Flights retains the existing outbound-only detail format.
 
 ## Contract examples
@@ -372,7 +381,7 @@ extracted fares exceed the budget. Visible cards are not an exhaustive search.
 Website modules expose `navigate(raw_playwright_page, request, origin)` and
 `extract_flights(skyvern_page, request, origin)`, which returns validated flights.
 A second website can implement those two functions without duplicating browser
-management. Google Flights is still the only selected website; origin records and
+management. Both websites emit live previews; per-source origin records and
 flights include `website: google_flights` for source identification.
 Navigation confirms calendar dates and currency; extraction validates the actual
 page settings. Google's internal URL encoding is deliberately not parsed.

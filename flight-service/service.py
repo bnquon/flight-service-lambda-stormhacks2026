@@ -1,4 +1,4 @@
-"""Search Google Flights and KAYAK concurrently, preserving each recording."""
+"""Search Google Flights and Trip.com concurrently, preserving each recording."""
 
 import asyncio
 from contextlib import nullcontext
@@ -9,15 +9,15 @@ from time import monotonic
 from uuid import uuid4
 
 import google_flights
-import kayak
+import trip_com
 from delivery import archive_recording, post_results
 from live_browser import stream_browser
 from request import SearchRequest
-from updates import publish_update
+from updates import forward_callback_updates, publish_update
 from search_logging import log_context, log_event, log_step
 
 RESULTS_PER_SOURCE = 8
-ADAPTERS = (google_flights, kayak)
+ADAPTERS = (google_flights, trip_com)
 
 
 def run_search(request: SearchRequest) -> dict | None:
@@ -29,7 +29,8 @@ def run_search(request: SearchRequest) -> dict | None:
         from skyvern import Skyvern
         import skyvern.library.skyvern_browser
 
-        result = asyncio.run(search_with_clients(Skyvern, api_key, request))
+        with forward_callback_updates(request.progress_callback_url):
+            result = asyncio.run(search_with_clients(Skyvern, api_key, request))
         from storage import save_search
         save_search(result)
         if not post_results(result, "FLIGHT_RESULTS_POST_URL", request.callback_url):
@@ -50,7 +51,7 @@ async def search_with_clients(client_type, api_key: str, request: SearchRequest)
             logging.exception("Skyvern client cleanup failed")
 
     try:
-        return await search_origins(clients[0], request, kayak_skyvern=clients[1])
+        return await search_origins(clients[0], request, trip_com_skyvern=clients[1])
     finally:
         await asyncio.gather(*(close_client(client) for client in clients))
 
@@ -66,10 +67,10 @@ def source_record(request: SearchRequest, search_id: str, origin: str, adapter) 
     }
 
 
-async def search_origins(skyvern, request: SearchRequest, *, kayak_skyvern=None) -> dict:
+async def search_origins(skyvern, request: SearchRequest, *, trip_com_skyvern=None) -> dict:
     search_id = str(uuid4())
     started = monotonic()
-    clients = (skyvern, kayak_skyvern if kayak_skyvern is not None else skyvern)
+    clients = (skyvern, trip_com_skyvern if trip_com_skyvern is not None else skyvern)
     with log_context(session_id=request.session_id, search_id=search_id):
         created_at = datetime.now(timezone.utc).isoformat()
         record = {
@@ -98,7 +99,7 @@ async def search_origins(skyvern, request: SearchRequest, *, kayak_skyvern=None)
                         raise TimeoutError("Search time budget exhausted.")
                     flights = await search_origin(client, request, search_id, source,
                                                   timeout=min(240, remaining), adapter=adapter,
-                                                  preview=adapter is google_flights)
+                                                  preview=True)
                     eligible = [dict(flight, source=adapter.WEBSITE, website=adapter.WEBSITE)
                                 for flight in flights if request.budget is None or flight["price"] <= request.budget]
                     source["flights"] = sorted(eligible, key=lambda f: f["price"])[:RESULTS_PER_SOURCE]
@@ -169,7 +170,7 @@ async def search_origin(skyvern, request: SearchRequest, search_id: str, record:
                                    browser_session_id=browser.browser_session_id, url=browser.app_url)
                 working_page = await browser.get_working_page()
                 stream = stream_browser(working_page.page, request.session_id, search_id, origin,
-                                        browser.browser_session_id) if preview else nullcontext()
+                                        browser.browser_session_id, website=adapter.WEBSITE) if preview else nullcontext()
                 async with stream:
                     phase_started = monotonic()
                     await adapter.navigate(working_page.page, request, origin)
@@ -179,7 +180,7 @@ async def search_origin(skyvern, request: SearchRequest, search_id: str, record:
                         publish_update(request.session_id, search_id, "search.status", origin=origin,
                                        website=adapter.WEBSITE, status="extracting")
                     phase_started = monotonic()
-                    if adapter is kayak:
+                    if adapter is trip_com:
                         flights = await adapter.extract_flights(working_page, request, origin, metadata=record)
                     else:
                         flights = await adapter.extract_flights(working_page, request, origin)

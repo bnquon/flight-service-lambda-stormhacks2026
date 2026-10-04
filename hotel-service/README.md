@@ -144,9 +144,7 @@ to `HOTEL_RESULTS_POST_URL`. Leave it blank to skip delivery. This must be a
 backend receiver, not a frontend page address. POST failures set `delivery_error`
 to `{code, message}` and save it back to Mongo without failing the search; there
 are no delivery retries.
-Waiting and upload add time before the final response. Live WebSocket frames
-continue to come only from Booking.com to avoid mixing two browsers in the
-existing single preview. Airbnb is independently recorded but does not emit frames. See [shared configuration](../README.md#recording-storage-and-result-delivery).
+Waiting and upload add time before the final response. Both Booking.com and Airbnb emit live frames tagged with their website and browser session. See [shared configuration](../README.md#recording-storage-and-result-delivery).
 
 Each hotel is deliberately small. Example based on an inspected Tokyo card
 (prices change; this is not a completed Skyvern/Lambda run):

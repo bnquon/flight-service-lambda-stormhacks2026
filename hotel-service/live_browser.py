@@ -8,7 +8,7 @@ from updates import has_update_listener, publish_update
 
 
 @asynccontextmanager
-async def stream_browser(page, session_id, search_id, origin, browser_session_id):
+async def stream_browser(page, session_id, search_id, origin, browser_session_id, *, website=None):
     # Lambda invocations without a live subscriber don't capture frames.
     if not has_update_listener():
         yield
@@ -20,6 +20,8 @@ async def stream_browser(page, session_id, search_id, origin, browser_session_id
     accepting = True
     unavailable = False
     metadata = {"origin": origin, "browser_session_id": browser_session_id}
+    if website:
+        metadata["website"] = website
 
     def status(value):
         publish_update(session_id, search_id, "browser.stream", **metadata, status=value)
