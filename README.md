@@ -15,6 +15,24 @@ Run each service’s commands from its own directory. The existing `.venv/` and
 Service-specific `.env` files are ignored by Git; the hotel service should use its
 own Skyvern API key. Never put credentials in the frontend or a Docker image.
 
+## Shared local Python environment
+
+Create the shared `.venv` with a **stable Python 3.13 release**. Python 3.13
+prereleases such as `3.13.0b4` are incompatible with the installed `orjson`
+binary and can fail when either service imports Skyvern.
+
+From the workspace root on an Apple Silicon Mac with Homebrew Python installed:
+
+```bash
+/opt/homebrew/bin/python3.13 -m venv .venv
+.venv/bin/python -m pip install -r flight-service/requirements-dev.txt -r hotel-service/requirements-dev.txt
+```
+
+On other systems, use the path to your stable Python 3.13 interpreter. If an
+existing `.venv` uses a prerelease, move it aside before creating the replacement;
+running `venv` over it does not reliably replace the old environment. Restart
+both WebSocket servers after replacing `.venv`.
+
 See the [flight README](flight-service/README.md) for the existing contract,
 local commands and deployment notes. See the [Next.js integration guide](docs/nextjs-integration.md) for the shared WebSocket contract and a client component example.
 
@@ -455,3 +473,19 @@ A supplied `callback_url` takes precedence over `FLIGHT_RESULTS_POST_URL` or
 delivery behavior. Callback failures retain the search results and populate
 `delivery_error`; the orchestrator can use the direct response as a fallback.
 Deploy both updated Lambda images to activate the new request field.
+
+## Search step logging
+
+Both workers emit structured Python logs to the local terminal or Lambda
+CloudWatch. Each entry includes `service`, `step`, `phase`, and a timestamp;
+search steps include `session_id` and `search_id`, and flight origin steps
+include `origin`. Timed steps include `elapsed_ms` on completion or failure.
+Logs cover request handling, browser launch/page access, website navigation,
+extraction and result counts, browser cleanup, recording polling/download/S3
+upload, Mongo saves, and result POST delivery. Optional operations report
+`skipped` when unconfigured. Logs do not include request bodies, credentials,
+callback URLs, or browser frame data. Existing status events remain unchanged.
+
+Step logs default to `INFO`. Set `LOG_LEVEL=WARNING` or `LOG_LEVEL=ERROR` in
+each service environment to reduce output. Deploy the updated service images
+to enable these logs in the hosted Lambdas.

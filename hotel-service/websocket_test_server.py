@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
+import os
 from threading import Event
 
 from websockets.asyncio.server import serve
@@ -117,11 +118,12 @@ async def handle_connection(websocket):
 
 async def main():
     # Loopback and known frontend origins keep this billable test bridge local.
-    async with serve(handle_connection, "127.0.0.1", 8765, origins=[
+    port = int(os.environ.get("WS_PORT", "8766"))
+    async with serve(handle_connection, "127.0.0.1", port, origins=[
         "http://127.0.0.1:8080", "http://localhost:8080",
         "http://127.0.0.1:3000", "http://localhost:3000",
     ]):
-        print("WebSocket: ws://127.0.0.1:8765", flush=True)
+        print(f"WebSocket: ws://127.0.0.1:{port}", flush=True)
         print("Frontend: http://127.0.0.1:8080 (serve frontend/ separately)", flush=True)
         await asyncio.Future()
 

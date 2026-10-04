@@ -6,6 +6,7 @@ import re
 
 from google_flights_navigation import navigate
 from request import SearchRequest
+from search_logging import log_event, log_step
 
 
 WEBSITE = "google_flights"
@@ -128,15 +129,19 @@ async def read_search_settings(page) -> dict:
 
 async def extract_flights(page, request: SearchRequest, origin: str) -> list[dict]:
     page = page.page
-    search = await read_search_settings(page)
+    with log_step("extraction.read_search_settings"):
+        search = await read_search_settings(page)
     no_results = page.get_by_text(re.compile(r"^(No flights|No results).*", re.I))
     if await no_results.first.is_visible():
+        log_event("extraction.no_results", "completed", result_count=0)
         return validate_extraction({"outcome": "no_results", "search": search, "flights": []}, request, origin)
     # Scope to actual flight cards; ignore cheaper-date suggestions and "View more flights".
     cards = page.get_by_role("main").get_by_role("listitem").filter(
         has=page.get_by_role("link", name=re.compile(r"Select flight$")),
     )
+    log_event("extraction.wait_cards", "started")
     await cards.first.wait_for()
+    log_event("extraction.wait_cards", "completed")
     body = await page.get_by_role("main").inner_text()
     if "for 1 adult" not in body:
         raise ValueError("Could not confirm adult fare basis.")
@@ -156,5 +161,7 @@ async def extract_flights(page, request: SearchRequest, origin: str) -> list[dic
                 .map(element => element.textContent.trim()).filter(Boolean).join('·')
         };
     })""")
-    flights = [parse_card(card, request.currency, currency_name, request.trip_type) for card in raw_cards]
-    return validate_extraction({"outcome": "results", "search": search, "flights": flights}, request, origin)
+    log_event("extraction.cards", "completed", card_count=len(raw_cards))
+    with log_step("extraction.parse_validate"):
+        flights = [parse_card(card, request.currency, currency_name, request.trip_type) for card in raw_cards]
+        return validate_extraction({"outcome": "results", "search": search, "flights": flights}, request, origin)

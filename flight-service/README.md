@@ -377,10 +377,14 @@ print(lambda_handler(event, None))  # 400: round trips require a return date
 PY
 ```
 
-For a real search, create a virtual environment and install the SDK with browser support:
+For a real search, create a virtual environment with a stable Python 3.13 release
+and install the SDK with browser support. See the
+[shared environment setup](../README.md#shared-local-python-environment) for the
+Homebrew interpreter path and both services' local dependencies. Avoid Python
+prereleases such as `3.13.0b4`.
 
 ```bash
-python3 -m venv ../.venv
+python3.13 -m venv ../.venv
 source ../.venv/bin/activate
 python -m pip install -r requirements.txt
 cp -n .env.example .env

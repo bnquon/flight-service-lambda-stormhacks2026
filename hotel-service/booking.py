@@ -4,6 +4,7 @@ import re
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from request import SearchRequest
+from search_logging import log_event, log_step
 
 WEBSITE = "booking_com"
 RESULTS_HEADING = re.compile(r"(?:properties|property) found", re.I)
@@ -19,14 +20,19 @@ def search_url(request: SearchRequest) -> str:
 
 
 async def navigate(page, request: SearchRequest) -> None:
-    await page.goto(search_url(request), wait_until="domcontentloaded")
+    with log_step("navigation.open_booking"):
+        await page.goto(search_url(request), wait_until="domcontentloaded")
+    log_event("navigation.wait_results", "started")
     # Booking.com changes this field's accessible label between page variants.
     await page.locator('input[name="ss"]').wait_for()
     heading = page.get_by_role("heading", level=1, include_hidden=True).filter(has_text=RESULTS_HEADING)
     await heading.wait_for()
+    log_event("navigation.wait_results", "completed")
     dismiss = page.get_by_role("button", name="Dismiss sign-in info.", exact=True)
     if await dismiss.is_visible():
-        await dismiss.click()
+        with log_step("navigation.dismiss_sign_in"):
+            await dismiss.click()
+    log_event("navigation.validate_settings", "started")
     # Read-only checks still work if the optional sign-in overlay appears late.
     await page.get_by_role("button", name="Prices in Canadian Dollar CAD", exact=True, include_hidden=True).first.wait_for()
     occupancy = page.get_by_role("button", name=re.compile(r"^Number of travelers and rooms"), include_hidden=True)
@@ -38,6 +44,7 @@ async def navigate(page, request: SearchRequest) -> None:
     for key, expected in (("checkin", request.check_in.isoformat()), ("checkout", request.check_out.isoformat())):
         if query.get(key) != [expected]:
             raise ValueError("Booking.com changed the requested dates.")
+    log_event("navigation.validate_settings", "completed")
 
 
 def parse_card(raw: dict, request: SearchRequest) -> dict | None:
@@ -47,7 +54,10 @@ def parse_card(raw: dict, request: SearchRequest) -> dict | None:
     if not raw["name"] or not match or not raw["url"]:
         raise ValueError("Booking.com card is missing its name, link, or CAD price.")
     nights = (request.check_out - request.check_in).days
-    if not re.search(rf"\b{nights} nights?\b", raw["stay"]) or not re.search(rf"\b{request.adults} adults?\b", raw["stay"]):
+    # Booking.com labels whole-week stays as "1 week" / "2 weeks".
+    durations = re.findall(r"\b(\d+)\s+(nights?|weeks?)\b", raw["stay"], re.I)
+    stay_nights = sum(int(count) * (7 if unit.lower().startswith("week") else 1) for count, unit in durations)
+    if not durations or stay_nights != nights or not re.search(rf"\b{request.adults}\s+adults?\b", raw["stay"], re.I):
         raise ValueError("Booking.com card price doesn't match the stay and adults.")
     link = urlsplit(raw["url"])
     if link.hostname != "www.booking.com" or not link.path.startswith("/hotel/"):
@@ -78,8 +88,10 @@ async def extract_hotels(page, request: SearchRequest) -> list[dict]:
     cards = page.get_by_test_id("property-card")
     heading = await page.get_by_role("heading", level=1, include_hidden=True).inner_text()
     if NO_RESULTS.search(heading):
+        log_event("extraction.no_results", "completed", result_count=0)
         return []
-    await cards.first.wait_for()
+    with log_step("extraction.wait_cards"):
+        await cards.first.wait_for()
     # Snapshot the initially loaded batch. No pagination or scrolling/infinite loading.
     raw = await cards.evaluate_all(r"""cards => cards.map(card => {
         const text = id => card.querySelector(`[data-testid="${id}"]`)?.textContent.trim() || '';
@@ -96,9 +108,13 @@ async def extract_hotels(page, request: SearchRequest) -> list[dict]:
             text: card.innerText,
         };
     })""")
+    log_event("extraction.cards", "completed", card_count=len(raw))
+    log_event("extraction.parse_filter_sort", "started")
     hotels = []
     for card in raw:
         hotel = parse_card(card, request)
         if hotel is not None and (request.budget is None or hotel["total_price"] <= request.budget):
             hotels.append(hotel)
-    return sorted(hotels, key=lambda hotel: hotel["total_price"])
+    hotels.sort(key=lambda hotel: hotel["total_price"])
+    log_event("extraction.parse_filter_sort", "completed", result_count=len(hotels), skipped_count=len(raw) - len(hotels))
+    return hotels

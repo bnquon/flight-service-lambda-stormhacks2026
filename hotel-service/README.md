@@ -23,6 +23,9 @@ Each service has its own Docker build context.
 ## Configuration and local invocation
 
 Run from this directory. The shared virtual environment is `../.venv`.
+Create it with a stable Python 3.13 release using the
+[shared environment setup](../README.md#shared-local-python-environment);
+avoid prereleases such as `3.13.0b4` because compiled dependencies can fail to load.
 `hotel-service/.env` contains the existing Mongo connection and your separate
 hotel Skyvern key. For fresh setup, fill in `SKYVERN_API_KEY` yourself. The flight
 key remains in the root `.env`; don't source that file for hotel runs.
