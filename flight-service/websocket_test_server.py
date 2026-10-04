@@ -4,6 +4,8 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
+import os
+from pathlib import Path
 from threading import Event
 
 from websockets.asyncio.server import serve
@@ -11,6 +13,20 @@ from websockets.exceptions import ConnectionClosed
 
 from lambda_function import lambda_handler
 from updates import forward_updates
+
+
+def load_dotenv(path):
+    file = Path(path)
+    if not file.is_file():
+        return
+    for line in file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def message(message_type, *, session_id=None, search_id=None, **payload):
@@ -120,6 +136,8 @@ async def main():
     async with serve(handle_connection, "127.0.0.1", 8765, origins=[
         "http://127.0.0.1:8080", "http://localhost:8080",
         "http://127.0.0.1:3000", "http://localhost:3000",
+        "http://127.0.0.1:3001", "http://localhost:3001",
+        "http://127.0.0.1:8000", "http://localhost:8000",
     ]):
         print("WebSocket: ws://127.0.0.1:8765", flush=True)
         print("Frontend: http://127.0.0.1:8080 (serve frontend/ separately)", flush=True)
@@ -127,6 +145,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+    load_dotenv(Path(__file__).resolve().parent / ".env")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
