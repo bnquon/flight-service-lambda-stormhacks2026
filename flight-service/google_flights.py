@@ -60,6 +60,35 @@ def validate_extraction(data: object, request: SearchRequest, origin: str) -> li
     return validated
 
 
+def _fold_currency(value: str) -> str:
+    return re.sub(r"[\s.]+", " ", value.strip().lower())
+
+
+def currencies_match(displayed: str, code: str, currency_name: str) -> bool:
+    """Google Flights labels CAD as 'Canadian dollars', 'CAD', or 'C$' depending on locale."""
+    shown = _fold_currency(displayed)
+    name = _fold_currency(currency_name)
+    tokens = {
+        code.strip().lower(),
+        name,
+        name.removesuffix("s"),
+        f"{name}s" if not name.endswith("s") else name,
+    }
+    aliases = {
+        "CAD": {"c$", "ca$", "can$", "canadian dollar", "canadian dollars", "dollar", "dollars"},
+        "USD": {"$", "us$", "us dollar", "us dollars", "american dollar", "american dollars", "dollar", "dollars"},
+        "EUR": {"€", "euro", "euros"},
+        "GBP": {"£", "pound", "pounds", "pound sterling", "sterling"},
+        "ILS": {"₪", "israeli new shekel", "israeli new shekels", "israeli shekel", "israeli shekels", "shekel", "shekels"},
+    }
+    tokens.update(aliases.get(code.strip().upper(), ()))
+    folded = {_fold_currency(token) for token in tokens if token}
+    if shown in folded:
+        return True
+    shown_base = shown.removesuffix("s").strip()
+    return shown_base in folded or any(token.removesuffix("s") == shown_base for token in folded)
+
+
 def parse_card(card: dict, currency: str, currency_name: str, trip_type: str) -> dict:
     """Parse the inspected English accessibility label and displayed card fields."""
     summary = re.fullmatch(
@@ -70,7 +99,7 @@ def parse_card(card: dict, currency: str, currency_name: str, trip_type: str) ->
     if not summary:
         raise ValueError("Unrecognized Google Flights fare label.")
     amount, displayed_currency, basis, stops = summary.groups()
-    if displayed_currency.lower().removesuffix("s") != currency_name.lower().removesuffix("s"):
+    if not currencies_match(displayed_currency, currency, currency_name):
         raise ValueError("Flight currency does not match the search.")
     # Observed one-way cards omit the fare-basis phrase; the page ticket type is verified below.
     if basis is None and trip_type == "one_way":
@@ -163,5 +192,13 @@ async def extract_flights(page, request: SearchRequest, origin: str) -> list[dic
     })""")
     log_event("extraction.cards", "completed", card_count=len(raw_cards))
     with log_step("extraction.parse_validate"):
-        flights = [parse_card(card, request.currency, currency_name, request.trip_type) for card in raw_cards]
+        flights = []
+        last_error = None
+        for card in raw_cards:
+            try:
+                flights.append(parse_card(card, request.currency, currency_name, request.trip_type))
+            except ValueError as exc:
+                last_error = exc
+        if not flights:
+            raise last_error or ValueError("No parseable Google Flights fare cards.")
         return validate_extraction({"outcome": "results", "search": search, "flights": flights}, request, origin)
