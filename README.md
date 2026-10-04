@@ -602,3 +602,30 @@ longer launched or included in the flight container. Google expands additional
 fare cards when the observed "View more flights" control is available. The flight
 request, normalized response, live callback and recordings contract are unchanged.
 Hotel search remains Booking.com plus Airbnb, capped at eight offers per source.
+
+## Saved offer links deployment — October 4, 2026
+
+Runtime commit: `89ba049`. Both x86_64 Lambdas in `us-west-2` were updated
+and confirmed `Active` with `LastUpdateStatus: Successful`:
+
+| Lambda | Deployed image digest |
+| --- | --- |
+| `flight-search-service` | `sha256:d0500ce757f9802ffb77d1dfa94cb7d4fdbbb29e5778d1b15a0297f37c3e569c` |
+| `hotel-search-service` | `sha256:ed5ef0e982a87676c81c91400839eacbebcbc6bda6bfdec026951d08277ceb1c` |
+
+Flights now persist `booking_url` and `link_type`: captured Google outbound
+selection URLs use `flight_selection`, while uncaptured offers use the verified
+search URL with `search`. Capture adds at most 35 seconds per origin. A finite
+Skyvern DOM inspection captured a selected YVR–NRT outbound URL for April 10–20,
+2027; a full deployed search was not invoked for this release. Round trips still
+require choosing a return flight on Google; the link is not an airline checkout.
+
+Booking.com and Airbnb offers now retain `booking_url` alongside the existing
+dated property `url`. Existing Mongo storage and callback delivery preserve both
+fields. Older records are not backfilled. Function configuration, environment,
+recording delivery and public endpoints were preserved.
+
+Brain integration is on main at `bd53662` in `fare-orchestrator-service`; it saves
+the captured links, exposes them to the dashboard and shares selected links in
+WhatsApp. Frontend display changes are proposed in
+[fare-frontend PR #8](https://github.com/Mark-Vu/fare-frontend/pull/8).
