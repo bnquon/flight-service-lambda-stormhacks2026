@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "UploadRecordings",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:AbortMultipartUpload"
+      ],
+      "Resource": [
+        "arn:aws:s3:::travel-search-recordings-481665099496-us-west-2/flights/*",
+        "arn:aws:s3:::travel-search-recordings-481665099496-us-west-2/hotels/*"
+      ]
+    }
+  ]
+}

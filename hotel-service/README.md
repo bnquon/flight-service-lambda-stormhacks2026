@@ -95,8 +95,30 @@ Use a destination including its country to reduce ambiguity.
 
 Final JSON includes the request, IDs, status (`complete` or `failed`), timestamps,
 `hotels`, `error`, `skyvern_browser_session_id`, `live_view_url`, `recordings`, and
-`replay_url`. `complete` with `hotels: []` means no matching cards survived the
+`replay_url`, plus top-level `recording_url`, `recording_error`, and
+`delivery_error`. `complete` with `hotels: []` means no matching cards survived the
 budget/member-price filter or Booking.com explicitly showed zero properties.
+
+### Recording storage and result delivery
+
+When a bucket is configured, after closing the browser the worker waits up to
+`RECORDING_WAIT_SECONDS` (default 90 seconds total) for Skyvern's recording,
+checking every 3 seconds. It uploads one
+recording to `hotels/` in `RECORDINGS_S3_BUCKET`, in `RECORDINGS_S3_REGION`
+(default `us-west-2`). A blank bucket skips upload.
+
+`recording_url` is the public S3 playback URL, or null. Anyone with that URL can
+view the stored object; there is no signed URL expiry. `recording_error` is null
+or `{code, message}` for a recording timeout/upload failure. The hotel results and
+search status are preserved.
+
+The worker saves the final record to Mongo, then sends that record once as JSON
+to `HOTEL_RESULTS_POST_URL`. Leave it blank to skip delivery. This must be a
+backend receiver, not a frontend page address. POST failures set `delivery_error`
+to `{code, message}` and save it back to Mongo without failing the search; there
+are no delivery retries.
+Waiting and upload add time before the final response. Live WebSocket streaming
+is unchanged. See [shared configuration](../README.md#recording-storage-and-result-delivery).
 
 Each hotel is deliberately small. Example based on an inspected Tokyo card
 (prices change; this is not a completed Skyvern/Lambda run):
@@ -201,8 +223,8 @@ unavailable while the search continues. Frames aren't logged or stored; ordinary
 Lambda calls have no frame listener and don't capture a live feed.
 
 `browser.live_view.url` is an optional Skyvern dashboard link that may require a
-login. Saved recordings are separate and may be unavailable at the immediate
-lookup. Wait for `search.result`, not `search.status: complete`, before considering
+login. Saved recordings are separate: use `result.recording_url` for the
+public S3 playback URL after completion. Wait for `search.result`, not `search.status: complete`, before considering
 storage finished. Each connection accepts one active search. Disconnecting doesn't
 cancel the worker, and reconnecting doesn't recover its events.
 
@@ -260,5 +282,24 @@ stay totals, member-only prices, and no-result heading wordings. Run manually:
 ```
 
 Remaining work: more destinations/occupancies and real empty-results cases,
-recording metadata refresh, a live hotel preview check, deployed orchestrator/WebSocket transport.
+a live hotel preview check, deployed orchestrator/WebSocket transport, and a
+configured results POST receiver.
 Older hotel records in the flight database have not been moved automatically.
+
+## Recording delivery deployment
+
+The recording wait, S3 archive, and optional results POST code is deployed in
+`us-west-2`; Lambda reports `Active` / `Successful`.
+
+Image digest: `sha256:a2ac3e85a9897418a16276d7ed598221123a620432c3521ed95c9c23b207731f`.
+
+Recording uploads are enabled with
+`RECORDINGS_S3_BUCKET=travel-search-recordings-481665099496-us-west-2`.
+Bucket and upload role permissions were configured by the user. A live Lambda
+check confirmed recording upload, public HTTP 200 access, and exact Mongo
+read-back. Result POST delivery is disabled
+until its receiver URL is configured.
+
+Verified recording run: `b94d6e16-c25c-41cc-8247-3978482ef8d9` returned 17 results
+in 40.0 seconds. The uploaded MP4 is H.264, 1280×720, with
+no recording error. POST delivery remains untested while its URL is blank.

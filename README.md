@@ -232,12 +232,15 @@ Handled request error example:
 | Results | `flights`: sorted by `price` | `hotels`: sorted by `total_price` |
 | Browser metadata | In each `origins[]` entry | At the top level |
 | `error` | Null or `{code, message}`; origin errors also in `origins[]` | Null or `{code, message}` |
+| `recording_url` | One public S3 playback URL, or null | Same |
+| `recording_error`, `delivery_error` | Null or `{code, message}` | Same |
 | `created_at`, `updated_at` | UTC ISO timestamps | Same |
 | Extra fields | `suggestion`: currently null | `website`: `booking_com` |
 
 Browser metadata consists of `skyvern_browser_session_id`, `live_view_url`,
 `replay_url`, and `recordings` (`[{"url": "...", "filename": "..."}]`). URLs may
-be null, and recordings may be empty until Skyvern finishes processing them.
+be null. `recordings` contains provider metadata; `recording_url` is the single
+public S3 copy intended for playback.
 Each flight origin entry also has `origin`, `website`, `status`, and `error`.
 
 One item from `flights` (illustrative):
@@ -314,11 +317,94 @@ The searches are deployed as `flight-search-service` and `hotel-search-service`
 in `us-west-2`, with successful search/Mongo checks. Live frames are currently
 available through the local bridges. Production still needs a persistent WebSocket
 backend, authentication, job routing, and reconnect/result recovery. Recordings
-can appear after the immediate lookup; refresh and retention remain unresolved.
+are polled before S3 upload; bucket retention remains a configuration choice.
 Broader website variants and empty-results pages also need live checks.
 
 Full flight examples: [flight contract](flight-service/README.md#contract-examples).
 Hotel details: [hotel README](hotel-service/README.md).
+
+## Recording storage and result delivery
+
+Set these values in each Lambda's environment (and the appropriate local `.env`):
+
+```env
+RECORDINGS_S3_BUCKET=travel-search-recordings-481665099496-us-west-2
+RECORDINGS_S3_REGION=us-west-2
+RECORDING_WAIT_SECONDS=90
+FLIGHT_RESULTS_POST_URL=
+HOTEL_RESULTS_POST_URL=
+```
+
+Use `FLIGHT_RESULTS_POST_URL` for flights and `HOTEL_RESULTS_POST_URL` for hotels.
+These are backend receivers that accept JSON, not frontend page addresses. Blank
+POST URLs skip delivery; a blank bucket skips S3 storage.
+
+The bucket and receiver settings belong in `.env` locally and in each Lambda
+environment for AWS. Generated recording URLs do **not** belong in `.env`: each
+search returns its own `recording_url`, which is also stored in Mongo.
+
+**TODO — frontend result delivery:** supply the two backend POST receiver URLs,
+set `FLIGHT_RESULTS_POST_URL` / `HOTEL_RESULTS_POST_URL` in the corresponding
+Lambda environments, and verify each receiver accepts the final search record.
+Both values are currently blank.
+
+The Lambda Python runtime includes `boto3` for S3 access. For local upload tests,
+install it if missing: `../.venv/bin/python -m pip install boto3` from a service
+directory. Use local AWS credentials with permission to upload to the bucket.
+
+When the bucket is configured, after closing the browser the worker waits up to
+90 seconds total for Skyvern recording metadata, checking every 3 seconds. It
+uploads one available recording to S3 under
+`flights/` or `hotels/`; flights use the first available recording across origins,
+without combining videos. `recording_url` is a public playback URL with no signed
+URL expiry. Anyone with the URL can view it while the object remains stored.
+
+The worker saves the final record to Mongo, then sends that record once with an
+HTTP `POST` and `Content-Type: application/json`. This is the same JSON record as
+the parsed Lambda response body, without the HTTP wrapper. There are no delivery
+retries. Until a receiver URL is configured, Lambda still returns the final record
+and saves it when Mongo is configured.
+
+Recording timeout/upload errors leave `recording_url: null` and set
+`recording_error`. POST errors set `delivery_error` and save it back to Mongo;
+neither changes the search's status or discards its results. Browser metadata and live WebSocket frames remain
+separate: this adds playback after completion, without changing live streaming.
+
+The delivery code is deployed to both Lambdas, with updates confirmed
+`Active` / `Successful`. Both Lambda environments now enable recording uploads
+to `travel-search-recordings-481665099496-us-west-2`. The user confirmed bucket
+and role setup; the CLI user cannot inspect the bucket policy. Live Lambda
+checks confirmed public HTTP 200 MP4 playback and exact Mongo read-back for
+both services (9 flights in 48.5 seconds; 17 hotels in 40 seconds). POST delivery
+remains disabled until the receiver URLs are supplied.
+
+### AWS bucket setup (admin required)
+
+The configured bucket is `travel-search-recordings-481665099496-us-west-2`.
+An administrator created it and configured the policies below after the CLI user
+was denied `s3:CreateBucket`. Both Lambda environments now reference this bucket.
+
+An AWS administrator can set it up in the console:
+
+1. Create that bucket in `us-west-2`, with **Bucket owner enforced** ownership.
+2. Keep **Block public ACLs** and **Ignore public ACLs** enabled. At the bucket
+   level, disable **Block public bucket policies** and **Restrict public buckets**.
+3. Add [the recording read policy](infra/recordings-bucket-policy.json) under
+   bucket **Permissions → Bucket policy**. It permits public reads only under
+   `flights/` and `hotels/`.
+4. Add [the upload policy](infra/recordings-upload-policy.json) as an inline policy
+   on the existing `flight-search-service-lambda` role, used by both Lambdas.
+5. Set `RECORDINGS_S3_BUCKET` to that bucket name in both Lambda environments,
+   and use `RECORDINGS_S3_REGION=us-west-2`.
+
+If an account-level public-access block applies, a bucket setting cannot override
+it. The administrator must decide whether this public playback setup is allowed.
+No account-level settings are changed by this setup.
+
+Alternatively, an administrator can temporarily give the deployment user
+[the scoped setup policy](infra/recordings-setup-policy.json) to create/configure
+this bucket and attach the upload role policy. It does not grant blanket S3 access
+or permission to disable account-level public-access blocking.
 
 ## Code overview
 
@@ -329,8 +415,9 @@ lambda_function.lambda_handler
   → SearchRequest.parse
   → service.run_search
   → Skyvern cloud browser + website navigation/extraction
-  → browser close + recording metadata
+  → browser close + wait for recording + S3 upload
   → storage.save_search
+  → optional result POST
   → final JSON response
 ```
 
@@ -341,6 +428,7 @@ lambda_function.lambda_handler
 | `service.py` | Own browser lifetime, status events, final record, and Mongo save. |
 | `google_flights*.py` / `booking.py` | Website-specific navigation and DOM parsing. |
 | `storage.py` | Upsert the final record by `search_id`. |
+| `delivery.py` | Wait for one recording, upload to S3, and POST the final record. |
 | `updates.py` | Emit status JSON and forward events to a scoped transport listener. |
 | `live_browser.py` | Capture Chrome screencast JPEG frames while navigation/extraction runs. |
 | `websocket_test_server.py` | Local test transport; runs the same handler in a worker thread. |

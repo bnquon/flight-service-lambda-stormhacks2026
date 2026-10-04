@@ -8,6 +8,7 @@ import time
 from uuid import uuid4
 
 import google_flights
+from delivery import archive_recording, post_results
 from live_browser import stream_browser
 from request import SearchRequest
 from updates import publish_update
@@ -28,6 +29,8 @@ def run_search(request: SearchRequest) -> dict | None:
     result = asyncio.run(search_origins(skyvern, request))
     from storage import save_search
     save_search(result)
+    if not post_results(result, "FLIGHT_RESULTS_POST_URL"):
+        save_search(result)
     return result
 
 
@@ -47,7 +50,7 @@ async def search_origins(skyvern, request: SearchRequest) -> dict:
     }
     publish_update(request.session_id, search_id, "search.status", status="searching")
     # Share the time budget across origins; leave room for cleanup before Lambda exits.
-    deadline = time.monotonic() + 600
+    deadline = time.monotonic() + 420
     for origin in request.origins:
         origin_record = {
             "origin": origin, "website": google_flights.WEBSITE, "status": "searching",
@@ -84,6 +87,7 @@ async def search_origins(skyvern, request: SearchRequest) -> dict:
     if request.budget is not None:
         record["flights"] = [flight for flight in record["flights"] if flight["price"] <= request.budget]
     record["flights"].sort(key=lambda flight: flight["price"])
+    await archive_recording(skyvern, record, record["origins"], "flights")
     record["updated_at"] = datetime.now(timezone.utc).isoformat()
     # TODO: no-result suggestion rule is still awaiting review.
     publish_update(request.session_id, search_id, "search.status", status=record["status"])

@@ -171,6 +171,9 @@ Example parsed `200` body with one flight:
     }
   ],
   "suggestion": null,
+  "recording_url": "https://example-bucket.s3.us-west-2.amazonaws.com/flights/example.mp4",
+  "recording_error": null,
+  "delivery_error": null,
   "error": null,
   "created_at": "2026-10-03T18:21:19.623827+00:00",
   "updated_at": "2026-10-03T18:22:39.829280+00:00"
@@ -399,13 +402,15 @@ For Lambda, use the [container image setup](#lambda-container-image) below. It
 packages the runtime modules and dependencies for Linux/Python 3.13. Add the
 real Skyvern key to Lambda environment variables and configure a 660-second timeout
 for this direct execution slice.
-The search has a shared 600-second budget and a 240-second cap per origin for
+The search has a shared 420-second budget and a 240-second cap per origin for
 browser launch, navigation, and extraction. Finalization runs outside that cap,
-with up to 30 seconds for cleanup plus 10 seconds for recording metadata, so slow
+with up to 30 seconds for cleanup plus 10 seconds for immediate recording metadata, so slow
 finalization does not discard already extracted fares. It still consumes the shared
 budget before the next origin starts. Later origins can fail when that budget is
 exhausted.
-Cloud sessions also expire after 15 minutes if cleanup cannot finish.
+The 420-second search budget leaves room within the 660-second Lambda timeout
+for the final recording wait and upload. Cloud sessions also expire after 15
+minutes if cleanup cannot finish.
 
 Use direct Lambda invocation for this slice. Before connecting the dashboard,
 decide how to submit jobs asynchronously and retrieve results; a long search should
@@ -541,26 +546,31 @@ still need verification before frontend integration.
 The Playwright test confirmed that Skyvern produces a recording for direct actions.
 No screenshot capture/storage is added by this service.
 
-## Recording metadata
+## Recording storage and result delivery
 
-After a browser closes successfully, the service makes one bounded
-`get_browser_session(browser_session_id)` request. It copies the SDK's recording
-URLs and filenames into each origin's `recordings` array. `replay_url` points to the
-first recording for convenience; use the full array when there are multiple segments.
-The dashboard watch URL remains separate from these recording URLs.
+Browser metadata remains in each origin's `recordings` and `replay_url`. The
+worker, when a bucket is configured, polls Skyvern every 3 seconds for up to
+`RECORDING_WAIT_SECONDS` (default 90 seconds total), selects the first available
+recording across origins, and uploads one video
+to `flights/` in `RECORDINGS_S3_BUCKET` (`RECORDINGS_S3_REGION=us-west-2`). It does
+not combine recordings. A blank bucket skips upload.
 
-Recording lookup is best effort: missing metadata, a timeout, or an API error leaves
-`recordings: []` and `replay_url: null` without failing valid flight results. Failed
-extractions can still include recordings for debugging. If browser cleanup fails,
-the lookup is skipped. There are no polling loops, downloads, or extra dependencies.
+The top-level `recording_url` is the public S3 playback URL, or null. It does not
+expire like a signed URL; anyone with the URL can view the stored object. A
+recording timeout or upload error sets `recording_error: {code, message}` without
+changing search status or dropping fares. Provider URLs remain separate and may
+expire.
 
-These are provider-supplied URLs, not permanent replay storage. Recordings might
-not be ready immediately and URLs may expire. Keep the browser session ID for a
-later metadata lookup. URL expiration, retention, and viewer access still need live
-verification. The retrieval path passed offline tests and ran in the deployed live
-search. That immediate lookup returned no recordings; a later session lookup found
-one recording, confirming that availability can lag search completion. No deferred
-refresh is implemented yet.
+After saving the final record to Mongo, the worker sends it once as JSON to
+`FLIGHT_RESULTS_POST_URL` when configured. Leave that variable blank to skip
+POST delivery. The receiver must be a backend endpoint; it receives the record,
+not the Lambda HTTP wrapper. POST failures set `delivery_error: {code, message}`
+and are saved back to Mongo, preserving the search results. There are no delivery
+retries.
+
+Both error fields are null when no error occurred. Waiting/uploading adds time
+before the final response. This does not change live WebSocket streaming.
+See [shared configuration](../README.md#recording-storage-and-result-delivery).
 
 ## Offline search tests
 
@@ -706,9 +716,8 @@ Live flight frames have been confirmed by the user. Recording compatibility
 still needs a focused live check.
 
 `browser.live_view.url` remains an optional Skyvern dashboard link and may require
-a Skyvern login. Recordings are separate: `result.origins[].recordings` and
-`replay_url` may still be empty when the result arrives because Skyvern processes
-recordings after closing.
+a Skyvern login. Use the top-level `result.recording_url` for the uploaded S3
+playback video. Per-origin `recordings` and `replay_url` retain provider metadata.
 
 ### Connecting after deployment
 
@@ -734,3 +743,21 @@ follow-up lookup. See ignored `artifacts/lambda-reviewed-*` for this invocation.
 
 Image digest: `sha256:624e16412b27a5bfbe4b52cdb91546bb76bca15d94e7bdc7428e4461e1358420`.
 Both-axis findings and resolutions: [code review](../docs/code-review.md).
+
+## Recording delivery deployment
+
+The recording wait, S3 archive, and optional results POST code is deployed in
+`us-west-2`; Lambda reports `Active` / `Successful`.
+
+Image digest: `sha256:5702258a283d8d93669701dc685466f9556a6f573a73fb652a1567707943fbf9`.
+
+Recording uploads are enabled with
+`RECORDINGS_S3_BUCKET=travel-search-recordings-481665099496-us-west-2`.
+Bucket and upload role permissions were configured by the user. A live Lambda
+check confirmed recording upload, public HTTP 200 access, and exact Mongo
+read-back. Result POST delivery is disabled
+until its receiver URL is configured.
+
+Verified recording run: `9c64e55f-da14-44fc-b58b-3bbef548c2e7` returned 9 results
+in 48.5 seconds. The uploaded MP4 is H.264, 1280×720, with
+no recording error. POST delivery remains untested while its URL is blank.

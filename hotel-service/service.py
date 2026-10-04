@@ -7,6 +7,7 @@ import os
 from uuid import uuid4
 
 import booking
+from delivery import archive_recording, post_results
 from live_browser import stream_browser
 from request import SearchRequest
 from updates import publish_update
@@ -21,6 +22,8 @@ def run_search(request: SearchRequest) -> dict | None:
     result = asyncio.run(search(Skyvern(api_key=api_key, timeout=180), request))
     from storage import save_search
     save_search(result)
+    if not post_results(result, "HOTEL_RESULTS_POST_URL"):
+        save_search(result)
     return result
 
 
@@ -77,6 +80,7 @@ async def search(skyvern, request: SearchRequest) -> dict:
             except Exception:
                 # Cleanup/recording metadata failures must not discard extracted prices.
                 logging.exception("Skyvern cleanup or recording lookup failed")
+    await archive_recording(skyvern, record, [record], "hotels")
     record["updated_at"] = datetime.now(timezone.utc).isoformat()
     publish_status(record["status"])
     return record

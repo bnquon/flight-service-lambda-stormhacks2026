@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicPlayback",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::travel-search-recordings-481665099496-us-west-2/flights/*",
+        "arn:aws:s3:::travel-search-recordings-481665099496-us-west-2/hotels/*"
+      ]
+    }
+  ]
+}
