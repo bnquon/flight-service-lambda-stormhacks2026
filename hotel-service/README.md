@@ -1,4 +1,4 @@
-# Booking.com hotel search
+# Booking.com and Airbnb accommodation search
 
 Separate Python Lambda service using the same pinned dependencies as flights:
 Skyvern Cloud provides the recorded browser, Playwright extracts the DOM, and
@@ -6,8 +6,12 @@ Mongo saves final JSON. No AI extraction, pagination, or new dependencies.
 
 ## Status
 
-Request validation, Booking.com navigation/extraction, recording metadata,
-Mongo storage, and Lambda deployment are implemented. Local and deployed searches
+The local Lambda handler searches Booking.com and Airbnb concurrently in separate
+recorded cloud browsers, with separate SDK clients to avoid concurrent
+Playwright initialization. Clients close after both recordings finish. It keeps the eight cheapest validated offers from each
+loaded initial batch (16 maximum), sorted together by displayed stay total.
+Booking.com-only deployments must be rebuilt and deployed to receive this change.
+Request validation, recording metadata, and Mongo storage are implemented. Local and deployed searches
 have passed with matching Mongo read-back. Stay prices use explicit total-price
 labels rather than nightly prices.
 
@@ -59,7 +63,8 @@ PY
 
 The handler also accepts API Gateway JSON-body events. Missing Skyvern configuration
 returns 503; invalid requests return 400. A browser/extraction failure returns a
-final record with `status: failed`. Unexpected Mongo failures propagate to logs.
+per-source error. The final record has `status: partially_complete` if one source
+succeeds, or `failed` if both fail. Unexpected Mongo failures propagate to logs.
 
 ## Request
 
@@ -96,32 +101,52 @@ Use a destination including its country to reduce ambiguity.
 
 ## Results
 
-Final JSON includes the request, IDs, status (`complete` or `failed`), timestamps,
+Final JSON includes the request, IDs, status (`complete`, `partially_complete`, or `failed`), timestamps,
 `hotels`, `error`, `skyvern_browser_session_id`, `live_view_url`, `recordings`, and
 `replay_url`, plus top-level `recording_url`, `recording_error`, and
 `delivery_error`. `complete` with `hotels: []` means no matching cards survived the
-budget/member-price filter or Booking.com explicitly showed zero properties.
+budget/member-price filter or the sources returned no matching properties.
+
+`origins` contains one object per source, ordered `booking_com`, then `airbnb`.
+Top-level `websites` lists both sources. The legacy `website: booking_com` field
+identifies the primary live preview, not the source of every offer.
+Each origin includes `website`, `status`, `error`, `hotels`, `skyvern_browser_session_id`,
+`live_view_url`, `recordings`, `replay_url`, `recording_url`, `recording_error`,
+and `timings_seconds`. Launch, navigation, extraction, close, recording lookup,
+and archive times are measured separately, including time spent in failed steps.
+Airbnb navigation also separates opening the URL, waiting for cards, validating
+settings, and waiting for stable prices, so hydration delays are visible.
+All origins share the aggregate `session_id` and `search_id`.
+One source failing never discards successful results from the other.
+The final aggregate is saved and delivered once; individual sources do not
+independently save to Mongo or call the result receiver.
 
 ### Recording storage and result delivery
 
 When a bucket is configured, after closing the browser the worker waits up to
-`RECORDING_WAIT_SECONDS` (default 90 seconds total) for Skyvern's recording,
-checking every 3 seconds. It uploads one
-recording to `hotels/` in `RECORDINGS_S3_BUCKET`, in `RECORDINGS_S3_REGION`
+`RECORDING_WAIT_SECONDS` (default 90 seconds per source, concurrently) for
+Skyvern recordings, checking every 3 seconds. It uploads each source separately
+to `hotels/booking_com/<search_id>.<extension>` and
+`hotels/airbnb/<search_id>.<extension>` in `RECORDINGS_S3_BUCKET`, in `RECORDINGS_S3_REGION`
 (default `us-west-2`). A blank bucket skips upload.
 
 `recording_url` is the public S3 playback URL, or null. Anyone with that URL can
 view the stored object; there is no signed URL expiry. `recording_error` is null
-or `{code, message}` for a recording timeout/upload failure. The hotel results and
-search status are preserved.
+or `{code, message}` for a recording timeout/upload failure. Each source retains
+its own recording fields in `origins`. Top-level playback fields prefer the
+Booking.com archived recording, then Airbnb; provider replay links are the
+fallback if neither archive is available. The hotel results and search status
+are preserved. Existing S3 upload/public-read policies must allow both new
+subdirectories under `hotels/`.
 
 The worker saves the final record to Mongo, then sends that record once as JSON
 to `HOTEL_RESULTS_POST_URL`. Leave it blank to skip delivery. This must be a
 backend receiver, not a frontend page address. POST failures set `delivery_error`
 to `{code, message}` and save it back to Mongo without failing the search; there
 are no delivery retries.
-Waiting and upload add time before the final response. Live WebSocket streaming
-is unchanged. See [shared configuration](../README.md#recording-storage-and-result-delivery).
+Waiting and upload add time before the final response. Live WebSocket frames
+continue to come only from Booking.com to avoid mixing two browsers in the
+existing single preview. Airbnb is independently recorded but does not emit frames. See [shared configuration](../README.md#recording-storage-and-result-delivery).
 
 Each hotel is deliberately small. Example based on an inspected Tokyo card
 (prices change; this is not a completed Skyvern/Lambda run):
@@ -138,7 +163,12 @@ Each hotel is deliberately small. Example based on an inspected Tokyo card
 }
 ```
 
-`rating` is the guest score out of 10, not the star rating. Rating and review count
+`rating` is a guest score on a /10 display scale, not a star rating.
+Hotel rows also include `source`, `property_type`, `original_rating`, and
+`original_rating_scale`. Booking.com preserves its /10 score; Airbnb
+converts its /5 score by multiplying by two and preserves the original value.
+The review systems are not equivalent. Booking.com property type is null
+because its adapter does not extract that field. Rating and review count
 are null when no review label is shown. Results are sorted by displayed stay
 price. `price_note` preserves Booking.com's tax/fee disclosure: **total_price is
 not guaranteed to be the final checkout amount**, and budget filtering doesn't
@@ -214,7 +244,7 @@ and `timestamp`, plus:
 
 | Type | Payload |
 | --- | --- |
-| `search.status` | `status`: searching, extracting, complete, or failed |
+| `search.status` | `status`: searching, extracting, complete, partially_complete, or failed |
 | `browser.live_view` | `provider`, `website: booking_com`, `browser_session_id`, `url` |
 | `browser.stream` | `origin: booking_com`, `browser_session_id`, `status`: starting, live, ended, or unavailable |
 | `browser.frame` | `origin: booking_com`, `browser_session_id`, `mime_type: image/jpeg`, `data`: base64 JPEG |
@@ -309,3 +339,55 @@ until its receiver URL is configured.
 Verified recording run: `b94d6e16-c25c-41cc-8247-3978482ef8d9` returned 17 results
 in 40.0 seconds. The uploaded MP4 is H.264, 1280×720, with
 no recording error. POST delivery remains untested while its URL is blank.
+
+## Airbnb combined-results probe
+
+`airbnb.py` is the read-only adapter shared by the combined-results probe and
+the local Lambda handler. The Docker image packages it. Previously deployed
+Booking.com-only images remain unchanged until a new deployment.
+
+From `hotel-service/`:
+
+```bash
+../.venv/bin/python -m unittest discover -s tests -p test_airbnb.py
+../.venv/bin/python tests/probe_combined_hotels.py
+../.venv/bin/python tests/probe_combined_hotels.py --fresh
+```
+
+The live probe needs this checkout's ignored `artifacts/lambda-retest-request.json`
+and `artifacts/lambda-retest-response.json`, plus `SKYVERN_API_KEY` in `.env`.
+It searches Airbnb with the same validated request, then combines fresh Airbnb
+results with the **previously saved** Booking.com result. It checks the input
+matches that snapshot and writes `artifacts/combined-airbnb-probe.json`.
+It does not refresh Booking.com prices, invoke Lambda, write Mongo, deliver
+callbacks, upload recordings, or book anything. The cloud browser is closed.
+
+With `--fresh`, both sites are searched concurrently in separate Skyvern browsers
+using only the request artifact (the saved response is not read). Results are
+combined into `artifacts/combined-fresh-parallel-probe.json`, with per-site timing,
+results, errors, browser IDs, and recording links under `origins`. Both browsers
+are closed, then recording metadata is polled concurrently for up to 60 seconds.
+The probe separately measures results readiness, cleanup, and recording lookup.
+Both probe modes keep the eight cheapest valid offers from each site's loaded
+initial batch, returning at most 16 combined offers. This limits the response
+and downstream comparison work; it does not avoid loading the search pages or
+claim to find the eight cheapest properties across the site's entire inventory.
+No recordings are uploaded to S3, and provider URLs may expire. One source failing
+preserves the other's results as `partially_complete`; the probe exits with an
+error when either source fails so a partial run is not mistaken for a full pass.
+
+Existing hotel fields are retained. Extra fields identify `source`, the displayed
+`property_type`, and the original rating. Airbnb's /5 rating is multiplied by two
+for the existing /10 display; this does not make the review systems equivalent.
+The current Go mapper drops these extra fields, so exposing source/property type
+through the dashboard requires a follow-up consumer change. Do not assume that
+the existing hotel checkout automation supports Airbnb.
+
+Only the loaded initial batch is extracted, with duplicate links removed, matching
+dates/guests checked, CAD totals required, and the same whole-stay budget applied.
+Private/shared rooms are not excluded by the input contract. Search-card totals
+are not independently verified against checkout fees. Empty results, different
+locales, more destinations, and consistent access across sessions need more work
+before treating all destinations and sessions as reliable. The Lambda now
+uses the adapter with separate browser/recording/error lifecycles. It does
+not reserve accommodation or add an entire-place filter.
